@@ -1,0 +1,9 @@
+{
+  "name": "get-haiggoh",
+  "version": "0.1.0",
+  "description": "Install and keep up to date every published haiggoh plugin from one place. Also the canonical home of the haiggoh marketplace catalog.",
+  "author": { "name": "Heiko Brantsch" },
+  "homepage": "https://github.com/haiggoh/get-haiggoh",
+  "license": "MIT",
+  "keywords": ["skill", "hook", "marketplace", "install", "bootstrap", "meta"]
+}
