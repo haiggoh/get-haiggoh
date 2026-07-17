@@ -61,12 +61,40 @@ def test_hook_prints_nudge_when_a_catalog_plugin_is_missing(tmp_path):
         "GET_HAIGGOH_REFRESH_STAMP_FILE": str(tmp_path / "stamp.json"),
         "GET_HAIGGOH_SELF_NAME": "get-haiggoh",
         "GET_HAIGGOH_SKIP_NETWORK_REFRESH": "1",  # test hook: never shell out in tests
-        "GET_HAIGGOH_SKIP_REMOTE_SHA_CHECK": "1",  # no outdated-detection network calls either
     }
     r = _run(env)
     assert r.returncode == 0
     out = json.loads(r.stdout)
     assert "measure-twice" in out["hookSpecificOutput"]["additionalContext"]
+
+
+def test_hook_never_shells_out_to_git_ls_remote(tmp_path):
+    """Regression test: the hook must not do per-session outdated-detection network calls.
+    Fixed 2026-07-17 (was an unthrottled `git ls-remote` per catalog entry, every session)."""
+    known_path = str(tmp_path / "known_marketplaces.json")
+    marketplace_dir = tmp_path / "marketplaces" / "haiggoh" / ".claude-plugin"
+    marketplace_path = marketplace_dir / "marketplace.json"
+    installed_path = str(tmp_path / "installed_plugins.json")
+
+    _write_json(known_path, {"haiggoh": {"installLocation": str(tmp_path / "marketplaces" / "haiggoh")}})
+    _write_json(str(marketplace_path), {"plugins": [
+        {"name": "get-haiggoh", "source": {"source": "url", "url": "https://github.com/haiggoh/get-haiggoh.git"}},
+        {"name": "measure-twice", "source": {"source": "url", "url": "https://github.com/haiggoh/measure-twice.git"}},
+    ]})
+    _write_json(installed_path, {"plugins": {"measure-twice@haiggoh": [{"gitCommitSha": "deadbeef"}]}})
+
+    env = {
+        "GET_HAIGGOH_KNOWN_MARKETPLACES_FILE": known_path,
+        "GET_HAIGGOH_INSTALLED_PLUGINS_FILE": installed_path,
+        "GET_HAIGGOH_SKIP_FILE": str(tmp_path / "skip.json"),
+        "GET_HAIGGOH_REFRESH_STAMP_FILE": str(tmp_path / "stamp.json"),
+        "GET_HAIGGOH_SELF_NAME": "get-haiggoh",
+        "GET_HAIGGOH_SKIP_NETWORK_REFRESH": "1",
+        "PATH": "",  # no `git` on PATH at all -- any git-ls-remote call would raise/fail
+    }
+    r = _run(env)
+    assert r.returncode == 0
+    assert r.stdout.strip() == ""  # measure-twice is installed and not missing -- nothing to nudge
 
 
 def test_hook_prints_nothing_when_stdin_is_malformed(tmp_path):

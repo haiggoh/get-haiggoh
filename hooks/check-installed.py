@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
-"""get-haiggoh -- SessionStart hook: throttled marketplace refresh + install/update nudge.
+"""get-haiggoh -- SessionStart hook: throttled marketplace refresh + missing-plugin nudge.
 
 Reads the MARKETPLACE-REPO copy of marketplace.json (resolved via known_marketplaces.json's
-installLocation), diffs it against installed_plugins.json on two axes (missing, outdated),
-filters through the skip-list, and emits a nudge via additionalContext. Nothing is printed
-if there's nothing to report. Fail-safe throughout: any error -> exit 0, no output, never
-blocks a session. This hook NEVER installs or updates anything itself in `ask` mode (the
-default); `silent` mode (GET_HAIGGOH_AUTO_UPDATE=silent) additionally runs `claude plugin
-update` for outdated, non-skipped plugins -- but NEVER auto-installs a missing plugin under
-any mode, since a brand-new install always routes through the confirming skill.
+installLocation), diffs it against installed_plugins.json for MISSING plugins only, filters
+through the skip-list, and emits a nudge via additionalContext. Nothing is printed if there's
+nothing to report. Fail-safe throughout: any error -> exit 0, no output, never blocks a
+session. This hook NEVER installs anything itself -- a brand-new install always routes
+through the confirming skill.
+
+Outdated (version-drift) detection intentionally lives ONLY in `bin/get-haiggoh.py plan`, not
+here: it requires a `git ls-remote` per installed catalog entry, which is cheap to pay once
+when the user explicitly asks but too expensive to pay unconditionally on every session start
+(this hook already runs alongside 7+ other haiggoh SessionStart hooks).
 """
 import json
 import os
@@ -34,19 +37,6 @@ def _refresh_marketplace():
         return result.returncode == 0
     except Exception:
         return False
-
-
-def _remote_head_sha(url):
-    if os.environ.get("GET_HAIGGOH_SKIP_REMOTE_SHA_CHECK"):
-        return None  # test-only escape hatch; never set in production
-    try:
-        result = subprocess.run(["git", "ls-remote", url, "HEAD"], capture_output=True,
-                                 text=True, timeout=REFRESH_TIMEOUT_S)
-        if result.returncode != 0 or not result.stdout.strip():
-            return None
-        return result.stdout.split()[0]
-    except Exception:
-        return None
 
 
 def main():
@@ -76,35 +66,12 @@ def main():
     installed_data = c.load_json(c.installed_plugins_path())
     installed = c.load_installed(installed_data)
 
-    remote_shas = {}
-    for entry in catalog:
-        name = entry["name"]
-        if name == SELF_NAME or name not in installed:
-            continue
-        url = c.entry_repo_url(entry)
-        if url:
-            remote_shas[name] = _remote_head_sha(url)
-
     missing = c.compute_missing(catalog, installed, SELF_NAME)
-    outdated = c.compute_outdated(catalog, installed, remote_shas, SELF_NAME)
 
     skip_list = c.load_skip_list()
     missing = c.filter_missing_by_skip(missing, skip_list)
-    outdated = c.filter_outdated_by_skip(outdated, skip_list)
 
-    if os.environ.get("GET_HAIGGOH_AUTO_UPDATE") == "silent" and outdated:
-        still_outdated = []
-        for item in outdated:
-            try:
-                r = subprocess.run(["claude", "plugin", "update", f"{item['name']}@haiggoh"],
-                                    capture_output=True, timeout=30)
-                if r.returncode != 0:
-                    still_outdated.append(item)
-            except Exception:
-                still_outdated.append(item)
-        outdated = still_outdated
-
-    banner = c.format_nudge(missing, outdated)
+    banner = c.format_nudge(missing, [])
     if banner:
         print(json.dumps({"hookSpecificOutput": {"hookEventName": "SessionStart",
                                                    "additionalContext": banner}}))
