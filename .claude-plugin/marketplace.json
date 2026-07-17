@@ -67,6 +67,13 @@
       "description": "Install and keep up to date every published haiggoh plugin from one place. SessionStart hook nudges when something new or outdated appears; a confirming skill does the actual install/update. Canonical home of the haiggoh marketplace catalog.",
       "category": "productivity",
       "tags": ["skill", "hook", "marketplace", "install", "bootstrap", "meta"]
+    },
+    {
+      "name": "brief-agents",
+      "source": { "source": "url", "url": "https://github.com/haiggoh/brief-agents.git" },
+      "description": "A subagent inherits none of your durable rules — not your CLAUDE.md, not your memory, not your installed-plugin nudges — so it can blindly violate one it never heard of. Scans all three layers into one compact ~/.claude/agent-briefing-index.md (auto-regenerated when the sources change) and nudges you to brief the subagent with it before delegating architecture or code work.",
+      "category": "productivity",
+      "tags": ["skill", "hook", "subagents", "delegation", "briefing", "context", "rules"]
     }
   ]
 }
