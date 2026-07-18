@@ -168,3 +168,78 @@ def test_cli_plan_reports_nothing_to_do(tmp_path):
     r = _run_cli(["plan"], env)
     assert r.returncode == 0
     assert "nothing to do" in r.stdout.lower()
+
+
+def _selection_env(tmp_path):
+    known_path = str(tmp_path / "known_marketplaces.json")
+    marketplace_dir = tmp_path / "marketplaces" / "haiggoh" / ".claude-plugin"
+    marketplace_path = marketplace_dir / "marketplace.json"
+    installed_path = str(tmp_path / "installed_plugins.json")
+
+    _write_json(known_path, {"haiggoh": {"installLocation": str(tmp_path / "marketplaces" / "haiggoh")}})
+    _write_json(str(marketplace_path), {"plugins": [
+        {"name": "get-haiggoh", "category": "meta",
+         "source": {"source": "url", "url": "https://github.com/haiggoh/get-haiggoh.git"}},
+        {"name": "measure-twice", "category": "safety",
+         "source": {"source": "url", "url": "https://github.com/haiggoh/measure-twice.git"}},
+        {"name": "waypoints", "category": "sessions",
+         "source": {"source": "url", "url": "https://github.com/haiggoh/waypoints.git"}},
+    ]})
+    _write_json(installed_path, {"plugins": {}})
+    return {
+        "GET_HAIGGOH_KNOWN_MARKETPLACES_FILE": known_path,
+        "GET_HAIGGOH_INSTALLED_PLUGINS_FILE": installed_path,
+        "GET_HAIGGOH_SKIP_FILE": str(tmp_path / "skip.json"),
+        "GET_HAIGGOH_SELF_NAME": "get-haiggoh",
+        "GET_HAIGGOH_SKIP_REMOTE_SHA_CHECK": "1",
+    }
+
+
+def test_cli_plan_only_restricts_to_named_plugins(tmp_path):
+    env = _selection_env(tmp_path)
+    r = _run_cli(["plan", "--only", "waypoints"], env)
+    assert r.returncode == 0
+    assert "waypoints" in r.stdout
+    assert "measure-twice" not in r.stdout
+
+
+def test_cli_plan_category_restricts_to_matching_plugins(tmp_path):
+    env = _selection_env(tmp_path)
+    r = _run_cli(["plan", "--category", "safety"], env)
+    assert r.returncode == 0
+    assert "measure-twice" in r.stdout
+    assert "waypoints" not in r.stdout
+
+
+def test_cli_unrecognized_flag_errors_instead_of_running_unfiltered(tmp_path):
+    env = _selection_env(tmp_path)
+    r = _run_cli(["plan", "--bogus", "x"], env)
+    assert r.returncode == 2
+    assert "unrecognized" in r.stderr.lower()
+    # must NOT have silently fallen through to an unfiltered plan
+    assert "measure-twice" not in r.stdout and "waypoints" not in r.stdout
+
+
+def test_cli_apply_only_updates_just_the_named_plugin(monkeypatch, tmp_path):
+    env = _selection_env(tmp_path)
+    calls = []
+
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("get_haiggoh_cli", CLI)
+    mod = importlib.util.module_from_spec(spec)
+    for k, v in env.items():
+        monkeypatch.setenv(k, v)
+    spec.loader.exec_module(mod)
+
+    def fake_run(cmd, **kwargs):
+        calls.append(cmd)
+        class R:
+            returncode = 0
+            stderr = ""
+        return R()
+
+    monkeypatch.setattr(mod.subprocess, "run", fake_run)
+    rc = mod.cmd_apply(only=["waypoints"])
+    assert rc == 0
+    updated_names = {c[3].split("@")[0] for c in calls if c[1] == "plugin"}
+    assert updated_names == {"waypoints"}
