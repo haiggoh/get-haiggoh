@@ -140,6 +140,22 @@ def filter_outdated_by_skip(outdated, skip_list):
     return [item for item in outdated if skip_list.get(item["name"]) not in ("update", "both")]
 
 
+def filter_catalog_by_selection(catalog_entries, names=None, category=None):
+    """Narrow catalog entries to an explicit name list and/or a category, for selective
+    install/update (--only, --category). Both filters are AND'd when both are given.
+    None/empty means "no filter on that axis" -- so calling with neither returns the
+    catalog unchanged. `names` is matched case-sensitively against entry["name"]; unknown
+    names are silently dropped (not an error) so a typo just yields an empty selection
+    rather than crashing a SessionStart-adjacent call."""
+    out = catalog_entries
+    if names:
+        wanted = set(names)
+        out = [e for e in out if e["name"] in wanted]
+    if category:
+        out = [e for e in out if e.get("category") == category]
+    return out
+
+
 def today():
     """Today as YYYY-MM-DD; overridable via $GET_HAIGGOH_TODAY (tests)."""
     return os.environ.get("GET_HAIGGOH_TODAY") or date.today().isoformat()

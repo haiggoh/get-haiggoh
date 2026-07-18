@@ -155,6 +155,35 @@ def test_filter_outdated_by_skip_drops_update_and_both_scopes():
     assert c.filter_outdated_by_skip(outdated, skip) == [{"name": "c"}]
 
 
+def test_filter_catalog_by_selection_no_filters_returns_unchanged():
+    catalog = _catalog()
+    assert c.filter_catalog_by_selection(catalog) == catalog
+
+
+def test_filter_catalog_by_selection_by_names():
+    catalog = [{"name": "a"}, {"name": "b"}, {"name": "c"}]
+    assert c.filter_catalog_by_selection(catalog, names=["a", "c"]) == [
+        {"name": "a"}, {"name": "c"}]
+
+
+def test_filter_catalog_by_selection_unknown_name_drops_silently():
+    catalog = [{"name": "a"}, {"name": "b"}]
+    assert c.filter_catalog_by_selection(catalog, names=["nope"]) == []
+
+
+def test_filter_catalog_by_selection_by_category():
+    catalog = [{"name": "a", "category": "x"}, {"name": "b", "category": "y"}]
+    assert c.filter_catalog_by_selection(catalog, category="y") == [
+        {"name": "b", "category": "y"}]
+
+
+def test_filter_catalog_by_selection_names_and_category_and():
+    catalog = [{"name": "a", "category": "x"}, {"name": "b", "category": "y"},
+               {"name": "c", "category": "y"}]
+    assert c.filter_catalog_by_selection(catalog, names=["a", "b"], category="y") == [
+        {"name": "b", "category": "y"}]
+
+
 def test_should_refresh_true_when_stamp_missing(tmp_path):
     assert c.should_refresh(str(tmp_path / "nope"), "2026-07-16") is True
 

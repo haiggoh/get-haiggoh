@@ -29,10 +29,11 @@ def _remote_head_sha(url):
         return None
 
 
-def _compute():
+def _compute(only=None, category=None):
     known = c.load_json(c.known_marketplaces_path())
     marketplace_path = c.resolve_marketplace_json_path(known, "haiggoh")
     catalog = c.load_marketplace_entries(c.load_json(marketplace_path)) if marketplace_path else []
+    catalog = c.filter_catalog_by_selection(catalog, names=only, category=category)
     installed = c.load_installed(c.load_json(c.installed_plugins_path()))
 
     remote_shas = {}
@@ -52,8 +53,8 @@ def _compute():
     return missing, outdated
 
 
-def cmd_plan():
-    missing, outdated = _compute()
+def cmd_plan(only=None, category=None):
+    missing, outdated = _compute(only=only, category=category)
     if not missing and not outdated:
         print("Nothing to do -- every haiggoh plugin is installed and current.")
         return 0
@@ -68,8 +69,8 @@ def cmd_plan():
     return 0
 
 
-def cmd_apply():
-    missing, outdated = _compute()
+def cmd_apply(only=None, category=None):
+    missing, outdated = _compute(only=only, category=category)
     failed = []
     for name in missing:
         r = subprocess.run(["claude", "plugin", "install", f"{name}@haiggoh"], capture_output=True, text=True)
@@ -85,11 +86,46 @@ def cmd_apply():
     return 1 if failed else 0
 
 
+def _parse_selection_args(argv):
+    """Parse --only name1,name2 and --category NAME out of argv. Returns
+    (only_names_or_None, category_or_None, leftover_unrecognized_args)."""
+    only = None
+    category = None
+    leftover = []
+    i = 0
+    while i < len(argv):
+        arg = argv[i]
+        if arg == "--only" and i + 1 < len(argv):
+            only = [n.strip() for n in argv[i + 1].split(",") if n.strip()]
+            i += 2
+        elif arg.startswith("--only="):
+            only = [n.strip() for n in arg[len("--only="):].split(",") if n.strip()]
+            i += 1
+        elif arg == "--category" and i + 1 < len(argv):
+            category = argv[i + 1]
+            i += 2
+        elif arg.startswith("--category="):
+            category = arg[len("--category="):]
+            i += 1
+        else:
+            leftover.append(arg)
+            i += 1
+    return only, category, leftover
+
+
 def main(argv):
     if not argv or argv[0] not in ("plan", "apply"):
-        print("usage: get-haiggoh.py plan|apply", file=sys.stderr)
+        print("usage: get-haiggoh.py plan|apply [--only name1,name2] [--category NAME]",
+              file=sys.stderr)
         return 2
-    return cmd_plan() if argv[0] == "plan" else cmd_apply()
+    cmd, rest = argv[0], argv[1:]
+    only, category, leftover = _parse_selection_args(rest)
+    if leftover:
+        print(f"usage: get-haiggoh.py {cmd} [--only name1,name2] [--category NAME]"
+              f" (unrecognized: {' '.join(leftover)})", file=sys.stderr)
+        return 2
+    return cmd_plan(only=only, category=category) if cmd == "plan" \
+        else cmd_apply(only=only, category=category)
 
 
 if __name__ == "__main__":

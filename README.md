@@ -21,12 +21,21 @@ to be the first plugin published, not because it was the right fit.
   (what would be installed/updated, missing AND outdated), asks for confirmation, then
   executes it.
 
-## MVP scope
+## Selective install/update
 
-Installs/updates **everything** in the catalog, no picking. A curated/categorized mode
-(e.g. grouping by purpose) is a natural future extension once the plugin list grows large
-enough that "everything" stops being the obviously-right default -- not built in this
-version.
+`bin/get-haiggoh.py plan|apply` accepts:
+
+- `--only name1,name2` -- restrict to specific plugin names (exact match; typos silently
+  yield an empty selection rather than erroring, matching this tool's fail-safe style).
+- `--category NAME` -- restrict to catalog entries whose marketplace.json `category`
+  field equals `NAME`. Both flags AND together when given.
+
+**Known limitation:** every plugin in the current catalog is tagged `category:
+"productivity"`, so `--category` doesn't discriminate yet -- there's no real taxonomy
+behind it today. Diversifying the categories is a separate, more consequential edit to
+the shared `marketplace.json` (affects every installed plugin's metadata) and deserves
+its own review rather than being folded silently into this feature. `--only` is fully
+functional today; `--category` is the mechanism, ready for whenever the taxonomy exists.
 
 ## Configuration
 
