@@ -8,10 +8,13 @@ nothing to report. Fail-safe throughout: any error -> exit 0, no output, never b
 session. This hook NEVER installs anything itself -- a brand-new install always routes
 through the confirming skill.
 
-Outdated (version-drift) detection intentionally lives ONLY in `bin/get-haiggoh.py plan`, not
-here: it requires a `git ls-remote` per installed catalog entry, which is cheap to pay once
-when the user explicitly asks but too expensive to pay unconditionally on every session start
-(this hook already runs alongside 7+ other haiggoh SessionStart hooks).
+Outdated (version-drift) detection uses the "Option B" cache strategy: the `git ls-remote`
+sweep is expensive to pay on every session start (this hook runs alongside 7+ other haiggoh
+SessionStart hooks), so it is gated behind the same once-per-day `should_refresh()` stamp as
+the marketplace refresh AND the fetched shas are cached alongside the stamp. Same-day boots
+read the cached shas and still surface outdated nudges with NO network hit; the sweep is paid
+at most once per day (in parallel, bounded). A failed/partial sweep falls silent — never a
+false "update available".
 """
 import json
 import os
@@ -39,6 +42,41 @@ def _refresh_marketplace():
         return False
 
 
+def _remote_head_sha(url):
+    """Remote HEAD sha via `git ls-remote`, or None on any failure/timeout (which
+    compute_outdated treats as 'unknown', never a false positive)."""
+    if os.environ.get("GET_HAIGGOH_SKIP_REMOTE_SHA_CHECK"):
+        return None  # test-only escape hatch
+    try:
+        result = subprocess.run(["git", "ls-remote", url, "HEAD"], capture_output=True,
+                                 text=True, timeout=REFRESH_TIMEOUT_S)
+        if result.returncode != 0 or not result.stdout.strip():
+            return None
+        return result.stdout.split()[0]
+    except Exception:
+        return None
+
+
+def _fetch_remote_shas(catalog, installed):
+    """Parallel, bounded `ls-remote` sweep over installed catalog entries with a repo URL.
+    Returns {plugin_name: sha|None}. Paid at most once per day (gated by should_refresh in
+    main). Fail-safe: any error -> whatever partial result we have."""
+    targets = [(e["name"], c.entry_repo_url(e)) for e in catalog
+               if e.get("name") and e["name"] != SELF_NAME and e["name"] in installed
+               and c.entry_repo_url(e)]
+    shas = {}
+    if not targets:
+        return shas
+    try:
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=min(8, len(targets))) as ex:
+            for name, sha in ex.map(lambda t: (t[0], _remote_head_sha(t[1])), targets):
+                shas[name] = sha
+    except Exception:
+        pass
+    return shas
+
+
 def main():
     try:
         json.loads(sys.stdin.read() or "{}")
@@ -52,10 +90,9 @@ def main():
 
     today = c.today()
     stamp_path = c.refresh_stamp_path()
-    if c.should_refresh(stamp_path, today):
-        if _refresh_marketplace():
-            c.mark_refreshed(stamp_path, today)
-        else:
+    refreshing = c.should_refresh(stamp_path, today)
+    if refreshing:
+        if not _refresh_marketplace():
             return  # refresh failed/timed out -- do NOT diff against possibly-stale data
 
     marketplace_data = c.load_json(marketplace_path)
@@ -66,12 +103,20 @@ def main():
     installed_data = c.load_json(c.installed_plugins_path())
     installed = c.load_installed(installed_data)
 
-    missing = c.compute_missing(catalog, installed, SELF_NAME)
+    # Option B: fetch remote shas at most once/day (on the refresh) and cache them alongside
+    # the stamp; same-day boots reuse the cache so outdated nudges cost no network.
+    if refreshing:
+        remote_shas = _fetch_remote_shas(catalog, installed)
+        c.save_refresh_state(stamp_path, today, remote_shas)  # marks the date AND caches shas
+    else:
+        remote_shas = c.load_cached_shas(stamp_path)
 
     skip_list = c.load_skip_list()
-    missing = c.filter_missing_by_skip(missing, skip_list)
+    missing = c.filter_missing_by_skip(c.compute_missing(catalog, installed, SELF_NAME), skip_list)
+    outdated = c.filter_outdated_by_skip(
+        c.compute_outdated(catalog, installed, remote_shas, SELF_NAME), skip_list)
 
-    banner = c.format_nudge(missing, [])
+    banner = c.format_nudge(missing, outdated)
     if banner:
         print(json.dumps({"hookSpecificOutput": {"hookEventName": "SessionStart",
                                                    "additionalContext": banner}}))

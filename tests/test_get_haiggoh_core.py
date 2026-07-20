@@ -218,3 +218,38 @@ def test_format_nudge_lists_outdated_plugins():
 def test_format_nudge_lists_both_sections_when_both_present():
     b = c.format_nudge(["measure-twice"], [{"name": "waypoints", "installed_sha": "a", "remote_sha": "b"}])
     assert "measure-twice" in b and "waypoints" in b
+
+
+# --- Option B: SHA cache (save_refresh_state / load_cached_shas) ---
+
+def test_save_refresh_state_marks_date_so_should_refresh_is_false(tmp_path):
+    path = str(tmp_path / "stamp")
+    c.save_refresh_state(path, "2026-07-20", {"waypoints": "abc"})
+    assert c.should_refresh(path, "2026-07-20") is False
+    assert c.should_refresh(path, "2026-07-21") is True  # next day re-refreshes
+
+
+def test_save_and_load_cached_shas_roundtrip(tmp_path):
+    path = str(tmp_path / "stamp")
+    shas = {"waypoints": "deadbeef", "measure-twice": None}
+    c.save_refresh_state(path, "2026-07-20", shas)
+    assert c.load_cached_shas(path) == shas
+
+
+def test_load_cached_shas_empty_when_missing_or_no_key(tmp_path):
+    assert c.load_cached_shas(str(tmp_path / "nope")) == {}
+    # a legacy stamp written by mark_refreshed has no remote_shas key
+    legacy = str(tmp_path / "legacy")
+    c.mark_refreshed(legacy, "2026-07-20")
+    assert c.load_cached_shas(legacy) == {}
+
+
+def test_cached_shas_feed_compute_outdated(tmp_path):
+    # End-to-end of the off-day path: cached shas -> compute_outdated flags the drifted one.
+    path = str(tmp_path / "stamp")
+    c.save_refresh_state(path, "2026-07-20", {"waypoints": "remote1", "measure-twice": "same"})
+    catalog = [{"name": "waypoints"}, {"name": "measure-twice"}]
+    installed = {"waypoints": {"gitCommitSha": "local0"},
+                 "measure-twice": {"gitCommitSha": "same"}}
+    outdated = c.compute_outdated(catalog, installed, c.load_cached_shas(path), "get-haiggoh")
+    assert [o["name"] for o in outdated] == ["waypoints"]

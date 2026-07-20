@@ -180,6 +180,31 @@ def mark_refreshed(stamp_path, today_str):
             os.remove(tmp)
 
 
+def save_refresh_state(stamp_path, today_str, remote_shas):
+    """Like mark_refreshed, but also caches the day's remote HEAD shas alongside the date
+    (Option B): the once-per-day network fetch is paid on the refresh, and every later
+    same-day boot reads these cached shas to still surface outdated nudges WITHOUT a network
+    hit. Atomic write. should_refresh() only reads `.date`, so it is unaffected by the extra
+    key. `remote_shas` is {plugin_name: sha|None}."""
+    os.makedirs(os.path.dirname(stamp_path), exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(stamp_path), suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump({"date": today_str, "remote_shas": remote_shas or {}}, f)
+        os.replace(tmp, stamp_path)
+    finally:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+
+
+def load_cached_shas(stamp_path):
+    """Remote shas cached by the last save_refresh_state, or {} if absent/malformed. Used on
+    same-day boots to compute outdated without re-fetching. compute_outdated treats a missing
+    or None sha as 'unknown' and never manufactures a false positive from it."""
+    cached = load_json(stamp_path).get("remote_shas")
+    return cached if isinstance(cached, dict) else {}
+
+
 def format_nudge(missing, outdated):
     """Nudge banner text, or '' if there's nothing to report. Points at the get-haiggoh
     skill/plugin name so the user knows how to act on it, without executing anything
