@@ -74,6 +74,13 @@
       "description": "A subagent inherits none of your durable rules — not your CLAUDE.md, not your memory, not your installed-plugin nudges — so it can blindly violate one it never heard of. Scans all three layers into one compact ~/.claude/agent-briefing-index.md (auto-regenerated when the sources change) and nudges you to brief the subagent with it before delegating architecture or code work.",
       "category": "productivity",
       "tags": ["skill", "hook", "subagents", "delegation", "briefing", "context", "rules"]
+    },
+    {
+      "name": "local-agents",
+      "source": { "source": "url", "url": "https://github.com/haiggoh/local-agents.git" },
+      "description": "Run Claude Code on local Apple-Silicon MLX models (vllm-mlx) as an additive overlay: direct routing preserves native transcripts/history, a config-driven model registry, self-preservation-aware local agents, and dispatch/diagnostic harnesses. Your private paths/keys/model layout stay in a gitignored config.local — nothing of yours is published; your settings.json is untouched. Works with plain `claude` and wrapped launchers.",
+      "category": "productivity",
+      "tags": ["local", "mlx", "apple-silicon", "vllm-mlx", "offline", "budget", "inference", "agents", "overlay"]
     }
   ]
 }
