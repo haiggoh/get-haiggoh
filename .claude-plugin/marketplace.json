@@ -78,7 +78,7 @@
     {
       "name": "local-agents",
       "source": { "source": "url", "url": "https://github.com/haiggoh/local-agents.git" },
-      "description": "Run Claude Code on local Apple-Silicon MLX models (vllm-mlx) as an additive overlay: direct routing preserves native transcripts/history, a config-driven model registry, self-preservation-aware local agents, and dispatch/diagnostic harnesses. Your private paths/keys/model layout stay in a gitignored config.local — nothing of yours is published; your settings.json is untouched. Works with plain `claude` and wrapped launchers.",
+      "description": "Save cost by offloading Claude Code work to free local MLX models (Apple Silicon). Main use: dispatch delegatable sub-tasks from your normal cloud session (Opus/Sonnet) to a local model — keep the capable model driving, hand off bulk/mechanical work. Optional full local mode for cost/budget-constrained stretches (spoofed id + direct vllm-mlx routing, native transcripts/history preserved). Additive overlay: private paths/keys stay in a gitignored config.local, settings.json untouched. Works whether Claude Code connects to Anthropic directly or via a gateway.",
       "category": "productivity",
       "tags": ["local", "mlx", "apple-silicon", "vllm-mlx", "offline", "budget", "inference", "agents", "overlay"]
     }
