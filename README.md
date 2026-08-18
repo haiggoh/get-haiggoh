@@ -5,6 +5,13 @@ Also the canonical home of the `haiggoh` marketplace catalog (`.claude-plugin/ma
 -- relocated here from `claude-code-desktop-sync`, which only hosted it because it happened
 to be the first plugin published, not because it was the right fit.
 
+## Install
+
+```
+/plugin marketplace add haiggoh/get-haiggoh
+/plugin install get-haiggoh@haiggoh
+```
+
 ## What it does
 
 - **SessionStart hook** (`hooks/check-installed.py`): once per day (throttled via a local
