@@ -220,26 +220,87 @@ def test_cli_unrecognized_flag_errors_instead_of_running_unfiltered(tmp_path):
     assert "measure-twice" not in r.stdout and "waypoints" not in r.stdout
 
 
-def test_cli_apply_only_updates_just_the_named_plugin(monkeypatch, tmp_path):
-    env = _selection_env(tmp_path)
-    calls = []
-
+def _load_cli(monkeypatch, env):
+    """Import bin/get-haiggoh.py as a module with `env` applied, so cmd_apply can be called
+    directly and its subprocess calls intercepted."""
     import importlib.util
     spec = importlib.util.spec_from_file_location("get_haiggoh_cli", CLI)
     mod = importlib.util.module_from_spec(spec)
     for k, v in env.items():
         monkeypatch.setenv(k, v)
     spec.loader.exec_module(mod)
+    return mod
+
+
+class _Ok:
+    returncode = 0
+    stderr = ""
+
+
+def test_cli_apply_only_updates_just_the_named_plugin(monkeypatch, tmp_path):
+    env = _selection_env(tmp_path)
+    calls = []
+    mod = _load_cli(monkeypatch, env)
+    installed_path = env["GET_HAIGGOH_INSTALLED_PLUGINS_FILE"]
 
     def fake_run(cmd, **kwargs):
         calls.append(cmd)
-        class R:
-            returncode = 0
-            stderr = ""
-        return R()
+        # a real `claude plugin install` records the plugin; the outcome check reads that back
+        _write_json(installed_path,
+                    {"plugins": {"waypoints@haiggoh": [{"version": "0.5.1"}]}})
+        return _Ok()
 
     monkeypatch.setattr(mod.subprocess, "run", fake_run)
     rc = mod.cmd_apply(only=["waypoints"])
     assert rc == 0
     updated_names = {c[3].split("@")[0] for c in calls if c[1] == "plugin"}
     assert updated_names == {"waypoints"}
+
+
+def test_cli_apply_reports_not_applied_when_the_version_does_not_move(
+        monkeypatch, capsys, tmp_path):
+    """`claude plugin update` exits 0 for "the clone succeeded". The install path is keyed on
+    the version, so an update that lands nowhere still exits 0 -- which is why apply must
+    verify the recorded version afterwards instead of trusting the exit status."""
+    env = _selection_env(tmp_path)
+    installed_path = env["GET_HAIGGOH_INSTALLED_PLUGINS_FILE"]
+    _write_json(installed_path, {"plugins": {"waypoints@haiggoh": [{"version": "0.5.1"}]}})
+    mod = _load_cli(monkeypatch, env)
+    monkeypatch.setattr(mod, "_remote_plugin_version", lambda url: "0.6.0")
+    monkeypatch.setattr(mod.subprocess, "run", lambda cmd, **kw: _Ok())  # exits 0, changes nothing
+
+    rc = mod.cmd_apply(only=["waypoints"])
+    out = capsys.readouterr().out
+    assert "NOT APPLIED" in out and "still 0.5.1" in out and "expected 0.6.0" in out
+    assert rc == 1  # a no-op update is a failure, not an "ok"
+
+
+def test_cli_apply_reports_ok_with_both_versions_when_the_update_lands(
+        monkeypatch, capsys, tmp_path):
+    env = _selection_env(tmp_path)
+    installed_path = env["GET_HAIGGOH_INSTALLED_PLUGINS_FILE"]
+    _write_json(installed_path, {"plugins": {"waypoints@haiggoh": [{"version": "0.5.1"}]}})
+    mod = _load_cli(monkeypatch, env)
+    monkeypatch.setattr(mod, "_remote_plugin_version", lambda url: "0.6.0")
+
+    def fake_run(cmd, **kwargs):
+        _write_json(installed_path, {"plugins": {"waypoints@haiggoh": [{"version": "0.6.0"}]}})
+        return _Ok()
+
+    monkeypatch.setattr(mod.subprocess, "run", fake_run)
+    rc = mod.cmd_apply(only=["waypoints"])
+    out = capsys.readouterr().out
+    assert "update waypoints: ok (0.5.1 -> 0.6.0)" in out
+    assert rc == 0
+
+
+def test_cli_plan_shows_the_version_pair_for_an_outdated_plugin(monkeypatch, capsys, tmp_path):
+    env = _selection_env(tmp_path)
+    _write_json(env["GET_HAIGGOH_INSTALLED_PLUGINS_FILE"],
+                {"plugins": {"waypoints@haiggoh": [{"version": "0.5.1"}]}})
+    monkeypatch.delenv("GET_HAIGGOH_SKIP_REMOTE_SHA_CHECK", raising=False)
+    env = {k: v for k, v in env.items() if k != "GET_HAIGGOH_SKIP_REMOTE_SHA_CHECK"}
+    mod = _load_cli(monkeypatch, env)
+    monkeypatch.setattr(mod, "_remote_plugin_version", lambda url: "0.6.0")
+    assert mod.cmd_plan(only=["waypoints"]) == 0
+    assert "waypoints  (0.5.1 -> 0.6.0)" in capsys.readouterr().out
