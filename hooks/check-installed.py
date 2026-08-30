@@ -8,18 +8,24 @@ nothing to report. Fail-safe throughout: any error -> exit 0, no output, never b
 session. This hook NEVER installs anything itself -- a brand-new install always routes
 through the confirming skill.
 
-Outdated (version-drift) detection uses the "Option B" cache strategy: the `git ls-remote`
-sweep is expensive to pay on every session start (this hook runs alongside 7+ other haiggoh
-SessionStart hooks), so it is gated behind the same once-per-day `should_refresh()` stamp as
-the marketplace refresh AND the fetched shas are cached alongside the stamp. Same-day boots
-read the cached shas and still surface outdated nudges with NO network hit; the sweep is paid
-at most once per day (in parallel, bounded). A failed/partial sweep falls silent — never a
-false "update available".
+Outdated (version-drift) detection compares the installed plugin VERSION against the version
+published in the repo's own .claude-plugin/plugin.json at HEAD. It does NOT compare commit
+shas: the harness writes installed_plugins.json's `gitCommitSha` once at first install and
+never rewrites it, so sha-comparison reported a phantom update for nearly every plugin on
+every boot, which is exactly what made a real pending update invisible in the noise.
+
+It uses the "Option B" cache strategy: the remote sweep is expensive to pay on every session
+start (this hook runs alongside 7+ other haiggoh SessionStart hooks), so it is gated behind
+the same once-per-day `should_refresh()` stamp as the marketplace refresh AND the fetched
+versions are cached alongside the stamp. Same-day boots read the cache and still surface
+outdated nudges with NO network hit; the sweep is paid at most once per day (in parallel,
+bounded). A failed/partial sweep falls silent — never a false "update available".
 """
 import json
 import os
 import subprocess
 import sys
+import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import get_haiggoh_core as c
@@ -42,39 +48,41 @@ def _refresh_marketplace():
         return False
 
 
-def _remote_head_sha(url):
-    """Remote HEAD sha via `git ls-remote`, or None on any failure/timeout (which
-    compute_outdated treats as 'unknown', never a false positive)."""
-    if os.environ.get("GET_HAIGGOH_SKIP_REMOTE_SHA_CHECK"):
-        return None  # test-only escape hatch
+def _remote_plugin_version(url):
+    """The `version` published in the repo's .claude-plugin/plugin.json at HEAD, or None on
+    any failure/timeout (which compute_outdated treats as 'unknown', never a false positive)."""
+    if os.environ.get("GET_HAIGGOH_SKIP_REMOTE_VERSION_CHECK") \
+            or os.environ.get("GET_HAIGGOH_SKIP_REMOTE_SHA_CHECK"):
+        return None  # test-only escape hatch (both spellings honoured)
+    manifest_url = c.plugin_manifest_url(url)
+    if not manifest_url:
+        return None
     try:
-        result = subprocess.run(["git", "ls-remote", url, "HEAD"], capture_output=True,
-                                 text=True, timeout=REFRESH_TIMEOUT_S)
-        if result.returncode != 0 or not result.stdout.strip():
-            return None
-        return result.stdout.split()[0]
+        with urllib.request.urlopen(manifest_url, timeout=REFRESH_TIMEOUT_S) as response:
+            version = json.loads(response.read().decode("utf-8")).get("version")
+        return version if isinstance(version, str) else None
     except Exception:
         return None
 
 
-def _fetch_remote_shas(catalog, installed):
-    """Parallel, bounded `ls-remote` sweep over installed catalog entries with a repo URL.
-    Returns {plugin_name: sha|None}. Paid at most once per day (gated by should_refresh in
+def _fetch_remote_versions(catalog, installed):
+    """Parallel, bounded manifest sweep over installed catalog entries with a repo URL.
+    Returns {plugin_name: version|None}. Paid at most once per day (gated by should_refresh in
     main). Fail-safe: any error -> whatever partial result we have."""
     targets = [(e["name"], c.entry_repo_url(e)) for e in catalog
                if e.get("name") and e["name"] != SELF_NAME and e["name"] in installed
                and c.entry_repo_url(e)]
-    shas = {}
+    versions = {}
     if not targets:
-        return shas
+        return versions
     try:
         from concurrent.futures import ThreadPoolExecutor
         with ThreadPoolExecutor(max_workers=min(8, len(targets))) as ex:
-            for name, sha in ex.map(lambda t: (t[0], _remote_head_sha(t[1])), targets):
-                shas[name] = sha
+            for name, version in ex.map(lambda t: (t[0], _remote_plugin_version(t[1])), targets):
+                versions[name] = version
     except Exception:
         pass
-    return shas
+    return versions
 
 
 def main():
@@ -103,18 +111,18 @@ def main():
     installed_data = c.load_json(c.installed_plugins_path())
     installed = c.load_installed(installed_data)
 
-    # Option B: fetch remote shas at most once/day (on the refresh) and cache them alongside
-    # the stamp; same-day boots reuse the cache so outdated nudges cost no network.
+    # Option B: fetch remote versions at most once/day (on the refresh) and cache them
+    # alongside the stamp; same-day boots reuse the cache so outdated nudges cost no network.
     if refreshing:
-        remote_shas = _fetch_remote_shas(catalog, installed)
-        c.save_refresh_state(stamp_path, today, remote_shas)  # marks the date AND caches shas
+        remote_versions = _fetch_remote_versions(catalog, installed)
+        c.save_refresh_state(stamp_path, today, remote_versions)  # date AND version cache
     else:
-        remote_shas = c.load_cached_shas(stamp_path)
+        remote_versions = c.load_cached_versions(stamp_path)
 
     skip_list = c.load_skip_list()
     missing = c.filter_missing_by_skip(c.compute_missing(catalog, installed, SELF_NAME), skip_list)
     outdated = c.filter_outdated_by_skip(
-        c.compute_outdated(catalog, installed, remote_shas, SELF_NAME), skip_list)
+        c.compute_outdated(catalog, installed, remote_versions, SELF_NAME), skip_list)
 
     banner = c.format_nudge(missing, outdated)
     if banner:

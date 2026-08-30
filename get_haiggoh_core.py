@@ -7,6 +7,7 @@ a corrupt/missing file must never crash a SessionStart hook.
 """
 import json
 import os
+import re
 import tempfile
 from datetime import date
 
@@ -59,9 +60,14 @@ def load_marketplace_entries(marketplace_data):
 
 
 def load_installed(installed_data, marketplace_suffix="@haiggoh"):
-    """Return {plugin_name: {"version": str, "gitCommitSha": str|None}} for every
+    """Return {plugin_name: {"version": str|None, "installPath": str|None}} for every
     installed_plugins.json key ending in marketplace_suffix. Takes the FIRST scope entry
-    per plugin (mirrors how these plugins are installed today: one scope each)."""
+    per plugin (mirrors how these plugins are installed today: one scope each).
+
+    `gitCommitSha` is deliberately NOT read. The harness writes it once at first install and
+    never rewrites it, so it is stale for every plugin that has been updated even once --
+    reading it at all invites a caller to compare against it again. `version` and
+    `installPath` are the two fields measured accurate in 11/11 plugins on 2026-08-30."""
     out = {}
     plugins = installed_data.get("plugins")
     if not isinstance(plugins, dict):
@@ -73,7 +79,7 @@ def load_installed(installed_data, marketplace_suffix="@haiggoh"):
         first = scopes[0]
         out[name] = {
             "version": first.get("version"),
-            "gitCommitSha": first.get("gitCommitSha"),
+            "installPath": first.get("installPath"),
         }
     return out
 
@@ -114,21 +120,82 @@ def compute_missing(catalog_entries, installed, self_name):
             if e["name"] != self_name and e["name"] not in installed]
 
 
-def compute_outdated(catalog_entries, installed, remote_shas, self_name):
-    """Installed entries whose remote HEAD sha differs from the installed sha, excluding
-    self_name. Never flags a plugin as outdated when the remote sha lookup itself failed
-    (None) -- a failed check must fall silent, not manufacture a false positive."""
+def plugin_manifest_url(git_url):
+    """Turn a GitHub repo URL into the raw URL of that repo's .claude-plugin/plugin.json at
+    HEAD -- the REMOTE side of the version comparison. Returns None for anything that isn't a
+    recognizable GitHub owner/repo URL, and callers must treat None as "unknown" rather than
+    as outdated. Accepts the https, ssh and scp-style forms, with or without a `.git` suffix."""
+    if not isinstance(git_url, str):
+        return None
+    match = re.fullmatch(
+        r"(?:https?://(?:www\.)?github\.com/|ssh://git@github\.com/|git@github\.com:)"
+        r"([^/]+)/([^/]+?)(?:\.git)?/?",
+        git_url.strip())
+    if not match:
+        return None
+    owner, repo = match.groups()
+    return (f"https://raw.githubusercontent.com/{owner}/{repo}/HEAD"
+            "/.claude-plugin/plugin.json")
+
+
+def parse_version(text):
+    """A dotted-numeric version as a comparable tuple, or None if it isn't one. A leading
+    `v` is tolerated and a `-rc1`/`+build` suffix is IGNORED for ordering, so 0.4.0-rc1 and
+    0.4.0 compare EQUAL -- deliberate: this tool only ever needs "is the published version
+    ahead of mine", and pre-release ordering is not worth a false nag either way."""
+    if not isinstance(text, str):
+        return None
+    match = re.fullmatch(r"v?(\d+(?:\.\d+)*)(?:[-+].*)?", text.strip())
+    if not match:
+        return None
+    return tuple(int(part) for part in match.group(1).split("."))
+
+
+def remote_is_newer(installed_version, remote_version):
+    """True only when the remote version is demonstrably AHEAD of the installed one.
+
+    Falls silent (False) whenever either side is unknown -- a failed fetch or a manifest
+    with no version must never manufacture an "update available". Unequal-length versions
+    are zero-padded, so 0.4 and 0.4.0 are the same version. If either string is not
+    dotted-numeric at all, this degrades to plain inequality, which is the old
+    strict-difference behaviour for the one case where ordering is undefined."""
+    if not installed_version or not remote_version:
+        return False
+    left, right = parse_version(installed_version), parse_version(remote_version)
+    if left is None or right is None:
+        return installed_version.strip() != remote_version.strip()
+    width = max(len(left), len(right))
+    left += (0,) * (width - len(left))
+    right += (0,) * (width - len(right))
+    return right > left
+
+
+def compute_outdated(catalog_entries, installed, remote_versions, self_name):
+    """Installed entries whose PUBLISHED version is ahead of the installed version,
+    excluding self_name.
+
+    Compares versions, NOT commit shas. Measured 2026-08-30 on harness 2.1.246 across all 11
+    haiggoh plugins: installed_plugins.json keeps `version` and `installPath` accurate in
+    11/11 cases, while `gitCommitSha` has never been rewritten since first install (one plugin
+    still recorded its initial commit across three version bumps). Comparing that field
+    against remote HEAD therefore reported a phantom update for almost every plugin, every
+    session, which made a REAL pending update indistinguishable from the noise. Both sides of
+    the version comparison are accurate and cost the same one network call per plugin.
+
+    A same-version push is deliberately NOT reported: the install path is keyed on the
+    version (~/.claude/plugins/cache/<owner>/<name>/<version>/), so an update that doesn't
+    bump plugin.json has nowhere new to land and is a silent no-op -- nagging about it could
+    never be satisfied."""
     out = []
     for e in catalog_entries:
         name = e["name"]
         if name == self_name or name not in installed:
             continue
-        remote_sha = remote_shas.get(name)
-        if remote_sha is None:
-            continue
-        installed_sha = installed[name].get("gitCommitSha")
-        if remote_sha != installed_sha:
-            out.append({"name": name, "installed_sha": installed_sha, "remote_sha": remote_sha})
+        remote_version = remote_versions.get(name)
+        installed_version = installed[name].get("version")
+        if remote_is_newer(installed_version, remote_version):
+            out.append({"name": name, "installed_version": installed_version,
+                        "remote_version": remote_version})
     return out
 
 
@@ -180,28 +247,34 @@ def mark_refreshed(stamp_path, today_str):
             os.remove(tmp)
 
 
-def save_refresh_state(stamp_path, today_str, remote_shas):
-    """Like mark_refreshed, but also caches the day's remote HEAD shas alongside the date
-    (Option B): the once-per-day network fetch is paid on the refresh, and every later
-    same-day boot reads these cached shas to still surface outdated nudges WITHOUT a network
-    hit. Atomic write. should_refresh() only reads `.date`, so it is unaffected by the extra
-    key. `remote_shas` is {plugin_name: sha|None}."""
+def save_refresh_state(stamp_path, today_str, remote_versions):
+    """Like mark_refreshed, but also caches the day's remote plugin VERSIONS alongside the
+    date (Option B): the once-per-day network fetch is paid on the refresh, and every later
+    same-day boot reads this cache to still surface outdated nudges WITHOUT a network hit.
+    Atomic write. should_refresh() only reads `.date`, so it is unaffected by the extra key.
+    `remote_versions` is {plugin_name: version_str|None}.
+
+    The cache key is `remote_versions`; a stamp written by an older release carries
+    `remote_shas` instead, which load_cached_versions ignores -- so the day it upgrades, the
+    nudge simply stays silent until the next daily refresh rather than comparing a version
+    against a sha."""
     os.makedirs(os.path.dirname(stamp_path), exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=os.path.dirname(stamp_path), suffix=".tmp")
     try:
         with os.fdopen(fd, "w") as f:
-            json.dump({"date": today_str, "remote_shas": remote_shas or {}}, f)
+            json.dump({"date": today_str, "remote_versions": remote_versions or {}}, f)
         os.replace(tmp, stamp_path)
     finally:
         if os.path.exists(tmp):
             os.remove(tmp)
 
 
-def load_cached_shas(stamp_path):
-    """Remote shas cached by the last save_refresh_state, or {} if absent/malformed. Used on
-    same-day boots to compute outdated without re-fetching. compute_outdated treats a missing
-    or None sha as 'unknown' and never manufactures a false positive from it."""
-    cached = load_json(stamp_path).get("remote_shas")
+def load_cached_versions(stamp_path):
+    """Remote versions cached by the last save_refresh_state, or {} if absent/malformed (which
+    includes a legacy stamp holding `remote_shas`). Used on same-day boots to compute outdated
+    without re-fetching. compute_outdated treats a missing or None version as 'unknown' and
+    never manufactures a false positive from it."""
+    cached = load_json(stamp_path).get("remote_versions")
     return cached if isinstance(cached, dict) else {}
 
 
@@ -216,5 +289,6 @@ def format_nudge(missing, outdated):
     for name in missing:
         lines.append(f"  + {name} (not installed)")
     for item in outdated:
-        lines.append(f"  ^ {item['name']} (update available)")
+        lines.append(f"  ^ {item['name']} {item['installed_version']} -> "
+                     f"{item['remote_version']} (update available)")
     return "\n".join(lines)
