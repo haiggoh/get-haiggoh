@@ -85,9 +85,9 @@
     {
       "name": "cost-tracker",
       "source": { "source": "url", "url": "https://github.com/haiggoh/cost-tracker.git" },
-      "description": "Reports Claude Code spend on three explicitly labelled axes \u2014 session lifetime, today across all sessions, and free local inference \u2014 from the authoritative statusline cost ledger. Period-aware (today / week / month / --since), quarantines structurally invalid records with visible diagnostics instead of counting them, and ships the statusline wrapper PATTERN rather than claiming the status line.",
+      "description": "Reports Claude Code spend on three explicitly labelled axes \u2014 session lifetime, today across all sessions, and free local inference \u2014 from the authoritative statusline cost ledger. Period-aware (today / week / month / --since), quarantines structurally invalid records with visible diagnostics instead of counting them, and ships the statusline wrapper PATTERN rather than claiming the status line. Calibrates its own daily total against the gateway's stated cumulative at a budget refusal \u2014 the one external reference available \u2014 and reports the size and sign of any gap instead of trusting its own arithmetic.",
       "category": "productivity",
-      "tags": ["cost", "budget", "spend", "statusline", "ledger", "tokens", "local-inference", "savings"]
+      "tags": ["cost", "budget", "spend", "statusline", "ledger", "tokens", "local-inference", "savings", "calibration"]
     }
   ]
 }
