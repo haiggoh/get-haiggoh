@@ -1,0 +1,148 @@
+#!/usr/bin/env python3
+"""get-haiggoh-menu - Menu-driven interface for get-haiggoh
+Provides a menu-driven interface to plan and apply haiggoh plugin updates.
+Default action is to install/update all plugins.
+"""
+
+import os
+import sys
+import subprocess
+
+# Path to the get-haiggoh script
+GET_HAIGGOH_SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "get-haiggoh.py")
+
+def run_get_haiggoh(args):
+    """Run get-haiggoh.py with given arguments and return the exit code."""
+    cmd = [sys.executable, GET_HAIGGOH_SCRIPT] + args
+    try:
+        result = subprocess.run(cmd, check=False)
+        return result.returncode
+    except Exception as e:
+        print(f"Error running {GET_HAIGGOH_SCRIPT}: {e}", file=sys.stderr)
+        return 1
+
+def print_menu():
+    """Print the main menu."""
+    print("\n=== get-haiggoh Menu ===")
+    print("Choose an action:")
+    print("  1) Plan all plugins (dry run)")
+    print("  2) Apply all plugins (install/update) [DEFAULT]")
+    print("  3) Plan specific plugins (by name or category)")
+    print("  4) Apply specific plugins (by name or category)")
+    print("  5) Exit")
+    print()
+
+def get_plugin_selection():
+    """Get plugin selection from user (names or category)."""
+    print("\nEnter plugin selection:")
+    print("  --only name1,name2   : Limit to specific plugin names (comma-separated)")
+    print("  --category NAME      : Limit to plugins in specific category")
+    print("  (leave empty for all plugins)")
+    selection = input("Selection: ").strip()
+    return selection
+
+def print_help():
+    """Print help message for get-haiggoh-menu."""
+    print("get-haiggoh-menu - Menu-driven interface for get-haiggoh")
+    print("")
+    print("Usage:")
+    print("  get-haiggoh-menu")
+    print("    Launch interactive menu (default action: apply all plugins)")
+    print("")
+    print("  get-haiggoh-menu --help")
+    print("    Show this help message")
+    print("")
+    print("The menu provides options to:")
+    print("  1) Plan all plugins (dry run)")
+    print("  2) Apply all plugins (install/update) [DEFAULT]")
+    print("  3) Plan specific plugins (by name or category)")
+    print("  4) Apply specific plugins (by name or category)")
+    print("  5) Exit")
+    print("")
+    print("When choosing specific plugin options, you can enter:")
+    print("  --only name1,name2   : Limit to specific plugin names (comma-separated)")
+    print("  --category NAME      : Limit to plugins in specific category")
+    print("  (leave empty for all plugins)")
+    print("")
+    print("Examples:")
+    print("  get-haiggoh-menu     # Interactive menu, default apply all")
+    print("")
+    print("Note: This is a wrapper around get-haiggoh.py that provides a menu interface.")
+    print("For direct command-line usage, see get-haiggoh.py --help")
+
+
+def main():
+    # Handle --help flag
+    if "--help" in sys.argv:
+        print_help()
+        return 0
+
+    while True:
+        print_menu()
+        choice = input("Enter your choice [1-5, default 2]: ").strip()
+
+        # Default to choice 2 if empty
+        if not choice:
+            choice = "2"
+
+        if choice == "1":
+            # Plan all
+            print("\n--- Planning all plugins (dry run) ---")
+            exit_code = run_get_haiggoh(["plan"])
+            if exit_code == 0:
+                print("\nPlan completed successfully.")
+            else:
+                print("\nPlan encountered issues.", file=sys.stderr)
+
+        elif choice == "2":
+            # Apply all (default)
+            print("\n--- Applying all plugins (install/update) ---")
+            exit_code = run_get_haiggoh(["apply"])
+            if exit_code == 0:
+                print("\nApply completed successfully.")
+            else:
+                print("\nApply encountered issues.", file=sys.stderr)
+
+        elif choice == "3":
+            # Plan specific
+            selection = get_plugin_selection()
+            args = ["plan"]
+            if selection:
+                # Split the selection into arguments (handles both --only and --category)
+                args.extend(selection.split())
+            print(f"\n--- Planning plugins: {selection if selection else 'all'} ---")
+            exit_code = run_get_haiggoh(args)
+            if exit_code == 0:
+                print("\nPlan completed successfully.")
+            else:
+                print("\nPlan encountered issues.", file=sys.stderr)
+
+        elif choice == "4":
+            # Apply specific
+            selection = get_plugin_selection()
+            args = ["apply"]
+            if selection:
+                args.extend(selection.split())
+            print(f"\n--- Applying plugins: {selection if selection else 'all'} ---")
+            exit_code = run_get_haiggoh(args)
+            if exit_code == 0:
+                print("\nApply completed successfully.")
+            else:
+                print("\nApply encountered issues.", file=sys.stderr)
+
+        elif choice == "5":
+            print("\nExiting...")
+            break
+
+        else:
+            print(f"\nInvalid choice: {choice}. Please enter a number between 1 and 5.", file=sys.stderr)
+
+        # Wait for user to press enter before showing menu again
+        input("\nPress Enter to continue...")
+
+if __name__ == "__main__":
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\n\nInterrupted. Exiting...")
+        sys.exit(1)

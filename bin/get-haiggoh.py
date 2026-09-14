@@ -162,7 +162,34 @@ def _parse_selection_args(argv):
     return only, category, leftover
 
 
+def print_help():
+    """Print help message."""
+    print("get-haiggoh CLI - Manage haiggoh plugins")
+    print("")
+    print("Usage:")
+    print("  get-haiggoh.py plan [--only name1,name2] [--category NAME]")
+    print("    Show what would be installed/updated (dry run)")
+    print("")
+    print("  get-haiggoh.py apply [--only name1,name2] [--category NAME]")
+    print("    Actually install/update plugins")
+    print("")
+    print("Options:")
+    print("  --only name1,name2  Limit operation to specific plugin names (comma-separated)")
+    print("  --category NAME     Limit operation to plugins in specific category")
+    print("  --help              Show this help message")
+    print("")
+    print("Examples:")
+    print("  get-haiggoh.py plan")
+    print("  get-haiggoh.py apply --only video-use,waypoints")
+    print("  get-haiggoh.py plan --category utility")
+
+
 def main(argv):
+    # Handle --help flag
+    if "--help" in argv:
+        print_help()
+        return 0
+
     if not argv or argv[0] not in ("plan", "apply"):
         print("usage: get-haiggoh.py plan|apply [--only name1,name2] [--category NAME]",
               file=sys.stderr)
