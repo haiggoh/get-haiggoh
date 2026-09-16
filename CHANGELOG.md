@@ -4,6 +4,21 @@ All notable changes to `get-haiggoh` are documented in this file.
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-09-16
+
+### Fixed
+
+- **The `0.5.1` mode fix did not actually ship.** `git update-index --chmod=+x` was run, but a later
+  `git add -A` (staging the changelog in the same commit) re-read the file from the working tree,
+  where the filesystem bit was still `644`, and silently reverted the staged mode. The commit landed,
+  the release was cut, and the published tree was still `100644` — the version number said fixed while
+  the artifact was unchanged.
+
+  **The lesson, which generalises past this repo:** set the bit on the FILE (`chmod 755`), not only in
+  the index. `git update-index --chmod` alone is undone by any subsequent `add` of that path. Verify
+  with `git ls-files -s <path>` *after* staging everything else, and confirm the published result with
+  `gh api "repos/OWNER/REPO/git/trees/HEAD?recursive=1"` rather than trusting the release.
+
 ## [0.5.1] - 2026-09-16
 
 ### Fixed
