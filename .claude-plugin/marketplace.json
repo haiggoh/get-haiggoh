@@ -76,11 +76,11 @@
       "tags": ["skill", "hook", "subagents", "delegation", "briefing", "context", "rules"]
     },
     {
-      "name": "local-agents",
-      "source": { "source": "url", "url": "https://github.com/haiggoh/local-agents.git" },
-      "description": "Save cost by offloading Claude Code work to free local MLX models (Apple Silicon). Main use: dispatch delegatable sub-tasks from your normal cloud session (Opus/Sonnet) to a local model — keep the capable model driving, hand off bulk/mechanical work. Optional full local mode for cost/budget-constrained stretches (spoofed id + direct vllm-mlx routing, native transcripts/history preserved). Additive overlay: private paths/keys stay in a gitignored config.local, settings.json untouched. Works whether Claude Code connects to Anthropic directly or via a gateway.",
+      "name": "free-agents",
+      "source": { "source": "url", "url": "https://github.com/haiggoh/free-agents.git" },
+      "description": "Run Claude Code on FREE inference — two equal lanes: local MLX models on Apple Silicon, and free cloud APIs (Gemini, NVIDIA, Groq, and a dozen more). Main use: dispatch delegatable sub-tasks from your paid session to a free model, keeping the capable model driving. Also runs full free sessions: `csl` for local, `csl remote` for free APIs — remote is faster and is the preferred lane for most interactive work, local wins offline and for long unattended runs. Additive overlay: private paths/keys stay in a gitignored config.local, settings.json untouched. Works whether Claude Code connects to Anthropic directly or via a gateway.",
       "category": "productivity",
-      "tags": ["local", "mlx", "apple-silicon", "vllm-mlx", "offline", "budget", "inference", "agents", "overlay"]
+      "tags": ["local", "remote", "free", "mlx", "apple-silicon", "offline", "budget", "inference", "agents", "overlay"]
     },
     {
       "name": "cost-tracker",
