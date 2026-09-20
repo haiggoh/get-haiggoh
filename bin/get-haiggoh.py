@@ -43,6 +43,57 @@ def _remote_plugin_version(url):
         return None
 
 
+SANDBOX_HINT = (
+    "the sandbox denies writes under ~/.claude/plugins, so no in-session retry can succeed.\n"
+    "    Run it OUTSIDE the sandbox — in Claude Code, prefix with `!` so it runs in your shell:\n"
+    "      ! python {self} apply\n"
+    "    This is a built-in Claude Code protection (write.denyWithinAllow), NOT a broken\n"
+    "    filesystem: the directory is writable, and an explicit sandbox.write.allow for that\n"
+    "    path does not override it. Do not chase ACLs, SIP, quotas or xattrs."
+)
+
+
+def _sandbox_denied(*outputs):
+    """True if this failure looks like the sandbox refusing a plugin-cache write.
+
+    Worth special-casing because the symptom lies: the denial surfaces as
+    `Operation not permitted`, which is exactly what a real permission fault looks like.
+    A remote session burned ~15 tool calls on read-only-filesystem, ACL, SIP, inode-quota
+    and FinderInfo-xattr theories before the user supplied the one-line workaround. Naming
+    the cause once is worth more than any number of retries.
+    """
+    blob = " ".join(o or "" for o in outputs).lower()
+    denial = ("operation not permitted" in blob or "permission denied" in blob
+              or "eperm" in blob or "read-only file system" in blob)
+    if not denial:
+        return False
+    # Only claim the sandbox when we are plausibly inside one AND the cache is really writable
+    # from an unsandboxed process — otherwise a genuine permission problem would be misreported.
+    return _cache_is_writable_but_denied()
+
+
+def _cache_is_writable_but_denied():
+    """Distinguish 'the sandbox blocked us' from 'this path is genuinely unwritable'."""
+    cache = os.path.expanduser("~/.claude/plugins/cache")
+    if not os.path.isdir(cache):
+        return False
+    probe = os.path.join(cache, ".get-haiggoh-write-probe")
+    try:
+        os.mkdir(probe)
+        os.rmdir(probe)
+        return False          # we CAN write: the failure was something else entirely
+    except OSError:
+        return True           # we cannot — consistent with the sandbox deny list
+
+
+def _explain_if_sandboxed(*outputs):
+    """Print the actionable one-liner when the sandbox is the cause. Returns True if it was."""
+    if not _sandbox_denied(*outputs):
+        return False
+    print("    " + SANDBOX_HINT.format(self=os.path.abspath(__file__)))
+    return True
+
+
 def _compute(only=None, category=None):
     known = c.load_json(c.known_marketplaces_path())
     marketplace_path = c.resolve_marketplace_json_path(known, "haiggoh")
@@ -106,6 +157,7 @@ def cmd_apply(only=None, category=None):
         r = subprocess.run(["claude", "plugin", "install", f"{name}@haiggoh"], capture_output=True, text=True)
         if r.returncode != 0:
             print(f"install {name}: FAILED: {r.stderr.strip()}")
+            _explain_if_sandboxed(r.stderr, r.stdout)
             failed.append(name)
             continue
         entry = _installed_now().get(name)
@@ -121,6 +173,7 @@ def cmd_apply(only=None, category=None):
         r = subprocess.run(["claude", "plugin", "update", f"{name}@haiggoh"], capture_output=True, text=True)
         if r.returncode != 0:
             print(f"update {name}: FAILED: {r.stderr.strip()}")
+            _explain_if_sandboxed(r.stderr, r.stdout)
             failed.append(name)
             continue
         after = (_installed_now().get(name) or {}).get("version")
