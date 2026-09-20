@@ -2,6 +2,19 @@
 
 All notable changes to `get-haiggoh` are documented in this file.
 
+## [0.6.0] - 2026-09-20
+
+### Fixed — sandbox cache denial detection + actionable hint
+
+When running inside a sandboxed Claude Code session, `get-haiggoh apply` would fail silently with `Operation not permitted` / `permission denied` when trying to write to the plugin cache (`~/.claude/plugins/cache/`). This is a built-in Claude Code protection (`write.denyWithinAllow`), not a filesystem problem — the directory IS writable from an unsandboxed shell.
+
+Added three functions to detect this specific failure mode and provide an actionable workaround:
+- `_sandbox_denied()` — detects the characteristic error strings (`operation not permitted`, `permission denied`, `eperm`, `read-only file system`)
+- `_cache_is_writable_but_denied()` — probes the cache directory to distinguish sandbox denial from genuine permission issues
+- `_explain_if_sandboxed()` — prints a one-line hint: run the command OUTSIDE the sandbox by prefixing with `!` (e.g., `! python get-haiggoh.py apply`)
+
+Integrated into `cmd_apply()` for both install and update failures. A remote session previously burned ~15 tool calls on read-only-filesystem/ACL/SIP theories before the user supplied the workaround; now the cause is named immediately.
+
 ## [Unreleased]
 
 ## [0.5.2] - 2026-09-16
