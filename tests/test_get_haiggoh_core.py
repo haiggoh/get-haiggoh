@@ -362,3 +362,41 @@ def test_cached_versions_feed_compute_outdated(tmp_path):
                  "measure-twice": {"version": "0.2.0"}}
     outdated = c.compute_outdated(catalog, installed, c.load_cached_versions(path), "get-haiggoh")
     assert [o["name"] for o in outdated] == ["waypoints"]
+
+
+# --- The default-branch contract (0.7.0) -------------------------------------------------
+# This tool resolves every plugin from its repo's DEFAULT branch, and that is the contract,
+# not a gap: what it fetches is defined to be what a consumer gets. The tests below pin the
+# contract itself, because the tempting "fix" for a plan that misses a pushed branch is to
+# teach the catalog a `ref` pin -- published, mutable state whose removal depends on someone
+# remembering. These fail if a future change quietly makes the remote side branch-aware.
+
+def test_manifest_url_targets_the_default_branch_and_carries_no_ref():
+    """HEAD here means the repo's default branch. A branch or tag baked into this URL would
+    make outdated-detection report a state no consumer can reach."""
+    url = c.plugin_manifest_url("https://github.com/haiggoh/waypoints.git")
+    assert "/HEAD/" in url
+    assert "?ref=" not in url and "refs/heads" not in url and "refs/tags" not in url
+
+
+def test_manifest_url_ignores_a_ref_or_sha_offered_in_the_catalog_entry():
+    """A marketplace plugin source MAY carry `ref`/`sha`. This tool takes only the url, so a
+    pin someone adds to the catalog cannot silently redirect the version comparison to a
+    branch. If this ever needs to change, it is a deliberate feature, not an accident."""
+    import inspect
+    sig = inspect.signature(c.plugin_manifest_url)
+    assert list(sig.parameters) == ["git_url"], (
+        "plugin_manifest_url grew a parameter -- if that is a ref/sha pin, the "
+        "default-branch contract in README.md and SKILL.md must be updated too")
+
+
+def test_a_pushed_but_unmerged_change_is_correctly_invisible():
+    """The behaviour a user misreads as a bug: work pushed to a branch does not change the
+    default branch's manifest, so the remote version is unchanged and nothing is reported.
+    An empty plan in that situation is a CORRECT answer about what is obtainable."""
+    catalog = [{"name": "waypoints"}]
+    installed = {"waypoints": {"version": "0.9.0"}}
+    # The branch bumped to 0.10.0, but the default branch still publishes 0.9.0.
+    remote_from_default_branch = {"waypoints": "0.9.0"}
+    assert c.compute_outdated(catalog, installed, remote_from_default_branch,
+                              "get-haiggoh") == []
