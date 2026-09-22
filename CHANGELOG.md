@@ -2,6 +2,77 @@
 
 All notable changes to `get-haiggoh` are documented in this file.
 
+## [0.7.0] - 2026-09-22
+
+### Documented — the default-branch contract, and where dogfooding goes
+
+`get-haiggoh` pulls every plugin from its repository's **default branch**, and its
+outdated-detection reads the `version` in `.claude-plugin/plugin.json` at that branch's
+HEAD. It cannot install from a feature branch. That was true before this release and is
+now written down as the **contract** rather than left to be discovered: this is a
+distribution tool, so what it fetches is defined to be what a consumer gets, and an update
+reported from a branch only one person had pushed would describe a state nobody can reach.
+
+The decision this release records is to **keep** that behaviour rather than teach the
+catalog `ref`/`sha` pins. A marketplace plugin entry does support them, so this is a
+choice, not a limitation. A pin lives in the published `marketplace.json` that every
+consumer reads; it keeps resolving successfully after the branch stops mattering, and
+removing it depends on someone remembering to. Pinning has one good use — holding
+consumers at a known-good version after a bad release — which is deliberate, visible, and
+has an obvious removal trigger. Using it to skip a merge trades a one-line merge for
+silent, published, mutable state.
+
+Two consequences now stated in both `README.md` and the skill, because both are invisible
+from inside a branch:
+
+- **Merging is part of shipping a plugin here.** A change is obtainable only once it is on
+  the default branch with its version bumped.
+- **A pushed-but-unmerged change makes `plan` correctly say "Nothing to do".** When an
+  update is expected and the plan is empty, the likely cause is an unmerged branch, not a
+  broken scan. The skill now says so, so that behaviour stops being read as a bug.
+
+**Dogfooding does not require merging first — and the mechanics are now written down,
+measured rather than inferred.** Merging *in order to test* makes the default branch the
+place unverified work lands, so `README.md` and the skill now carry a step-by-step local
+marketplace loop. Three findings drove the rewrite, each verified on a throwaway plugin and
+marketplace on Claude Code 2.1.x (created, probed, then removed, with the plugin registries
+diffed against a backup to confirm the machine was left unchanged):
+
+1. **A marketplace directory is not the plugin checkout.** It is a separate directory holding
+   `.claude-plugin/marketplace.json` whose entry points at the plugin by a `./` relative
+   path. `marketplace add` aimed at a plugin repo does not work — a likely first attempt,
+   and its failure is what sends people looking for workarounds.
+2. **A relative-path source is COPIED into the version-keyed cache, not linked** (verified:
+   different inodes). So a source edit does *not* appear in the installed copy, and neither
+   `marketplace update` nor `plugin update` brings it over: `plugin update` compares versions
+   and prints *"already at the latest version"* while leaving the stale copy in place. All
+   three commands exit 0, so nothing reports that the edit did not land. Bumping the dev
+   plugin's version does propagate (verified), and running the shipped script straight from
+   the checkout is usually the faster loop.
+3. **`mode: "link"` on a `command` source does load in place — but cannot be accepted from
+   inside a Claude Code session.** The install refuses and directs you to a real terminal,
+   because a marketplace-declared command needs human review. Worth knowing, not something
+   an agent can set up unattended.
+
+**Both documents now forbid editing `~/.claude/plugins/cache/` to test a change**, which is
+the reflex that finding 2 provokes. Measured: a marker hand-written into the cache was gone
+after the next `plugin update` — silently, no error. It is derived state, it cannot ship, and
+a sandboxed session cannot write there at all (that refusal looks like a filesystem fault and
+invites further workarounds). This is written as a prohibition with its reason attached,
+because the behaviour it prevents has actually been observed in practice.
+
+`apply` against the merged branch then answers the separate question *does it work the way a
+consumer receives it*, through the real fetch and install path. Neither dogfood replaces the
+other: only the second catches packaging-only failures.
+
+### Tests
+
+69 → 72. The three new cases pin the contract rather than restating the docs, and each was
+mutation-tested: planting a `ref=` branch pin in `plugin_manifest_url` fails two of them
+(plus two pre-existing URL tests), and breaking the version comparison fails the third.
+One asserts the function's signature, so adding a ref parameter fails with a message
+pointing at the docs that would need to change with it.
+
 ## [0.6.0] - 2026-09-20
 
 ### Fixed — sandbox cache denial detection + actionable hint
