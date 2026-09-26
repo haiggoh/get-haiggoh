@@ -27,6 +27,13 @@
       "tags": ["skill", "hook", "skills", "discoverability", "lsp", "dependencies"]
     },
     {
+      "name": "check-code",
+      "source": { "source": "url", "url": "https://github.com/haiggoh/check-code.git" },
+      "description": "Lints the lines Claude just edited and feeds findings straight back so they get fixed in the same turn: ruff, shellcheck, or any linter you add, repo config wins, touched lines only, never blocks, zero tokens on a clean edit.",
+      "category": "productivity",
+      "tags": ["hook", "lint", "code-quality", "ruff", "shellcheck"]
+    },
+    {
       "name": "measure-twice",
       "source": { "source": "url", "url": "https://github.com/haiggoh/measure-twice.git" },
       "description": "Before building automation, survey for what already exists and match the mechanism's trigger to the event that makes it relevant. Sibling of no-hidden-changes.",
