@@ -20,6 +20,13 @@
       "tags": ["skill", "hook", "transparency", "ux", "safety"]
     },
     {
+      "name": "summon-skills",
+      "source": { "source": "url", "url": "https://github.com/haiggoh/summon-skills.git" },
+      "description": "Makes Claude actually use the plugins and skills you already have: a local, zero-token matcher names the installed skills that fit each prompt, and plugins that are installed but inert (a declared server command or env var is missing) are flagged with the fix. Sibling of measure-twice.",
+      "category": "productivity",
+      "tags": ["skill", "hook", "skills", "discoverability", "lsp", "dependencies"]
+    },
+    {
       "name": "measure-twice",
       "source": { "source": "url", "url": "https://github.com/haiggoh/measure-twice.git" },
       "description": "Before building automation, survey for what already exists and match the mechanism's trigger to the event that makes it relevant. Sibling of no-hidden-changes.",
