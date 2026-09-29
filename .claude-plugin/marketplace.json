@@ -7,101 +7,260 @@
   "plugins": [
     {
       "name": "claude-code-desktop-sync",
-      "source": { "source": "url", "url": "https://github.com/haiggoh/claude-code-desktop-sync.git" },
+      "source": {
+        "source": "url",
+        "url": "https://github.com/haiggoh/claude-code-desktop-sync.git"
+      },
       "description": "Keeps MCP-server config in sync between Claude Code and Claude Desktop via a SessionStart hook, and reports the manual steps for anything that can't be auto-synced.",
       "category": "productivity",
-      "tags": ["mcp", "sync", "claude-desktop", "configuration"]
+      "tags": [
+        "mcp",
+        "sync",
+        "claude-desktop",
+        "configuration"
+      ]
     },
     {
       "name": "no-hidden-changes",
-      "source": { "source": "url", "url": "https://github.com/haiggoh/no-hidden-changes.git" },
+      "source": {
+        "source": "url",
+        "url": "https://github.com/haiggoh/no-hidden-changes.git"
+      },
       "description": "Steer Claude toward visible, honest, reversible changes and away from hidden-state workarounds that make a tool's own UI look empty, absent, or deceptive.",
       "category": "productivity",
-      "tags": ["skill", "hook", "transparency", "ux", "safety"]
+      "tags": [
+        "skill",
+        "hook",
+        "transparency",
+        "ux",
+        "safety"
+      ]
     },
     {
       "name": "summon-skills",
-      "source": { "source": "url", "url": "https://github.com/haiggoh/summon-skills.git" },
+      "source": {
+        "source": "url",
+        "url": "https://github.com/haiggoh/summon-skills.git"
+      },
       "description": "Makes Claude actually use the plugins and skills you already have: a local, zero-token matcher names the installed skills that fit each prompt, and plugins that are installed but inert (a declared server command or env var is missing) are flagged with the fix. Sibling of measure-twice.",
       "category": "productivity",
-      "tags": ["skill", "hook", "skills", "discoverability", "lsp", "dependencies"]
+      "tags": [
+        "skill",
+        "hook",
+        "skills",
+        "discoverability",
+        "lsp",
+        "dependencies"
+      ]
     },
     {
       "name": "check-code",
-      "source": { "source": "url", "url": "https://github.com/haiggoh/check-code.git" },
+      "source": {
+        "source": "url",
+        "url": "https://github.com/haiggoh/check-code.git"
+      },
       "description": "Lints the lines Claude just edited and feeds findings straight back so they get fixed in the same turn: ruff, shellcheck, or any linter you add, repo config wins, touched lines only, never blocks, zero tokens on a clean edit.",
       "category": "productivity",
-      "tags": ["hook", "lint", "code-quality", "ruff", "shellcheck"]
+      "tags": [
+        "hook",
+        "lint",
+        "code-quality",
+        "ruff",
+        "shellcheck"
+      ]
     },
     {
       "name": "measure-twice",
-      "source": { "source": "url", "url": "https://github.com/haiggoh/measure-twice.git" },
+      "source": {
+        "source": "url",
+        "url": "https://github.com/haiggoh/measure-twice.git"
+      },
       "description": "Before building automation, survey for what already exists and match the mechanism's trigger to the event that makes it relevant. Sibling of no-hidden-changes.",
       "category": "productivity",
-      "tags": ["skill", "hook", "automation", "planning", "design"]
+      "tags": [
+        "skill",
+        "hook",
+        "automation",
+        "planning",
+        "design"
+      ]
     },
     {
       "name": "resume-interrupted",
-      "source": { "source": "url", "url": "https://github.com/haiggoh/resume-interrupted.git" },
+      "source": {
+        "source": "url",
+        "url": "https://github.com/haiggoh/resume-interrupted.git"
+      },
       "description": "Detects when your most recent session was cut off mid-task (usage limit, crash, or dropped connection) and proactively offers to pick up where you left off.",
       "category": "productivity",
-      "tags": ["skill", "hook", "sessions", "resume", "continuity"]
+      "tags": [
+        "skill",
+        "hook",
+        "sessions",
+        "resume",
+        "continuity"
+      ]
     },
     {
       "name": "mcp-smoke-test",
-      "source": { "source": "url", "url": "https://github.com/haiggoh/mcp-smoke-test.git" },
+      "source": {
+        "source": "url",
+        "url": "https://github.com/haiggoh/mcp-smoke-test.git"
+      },
       "description": "Onboard and verify any MCP that drives an external app: smoke test, functional capability probe, evidence-based manual, and interactive prereq-ladder guide — with parametrized templates.",
       "category": "productivity",
-      "tags": ["skill", "mcp", "testing", "probe", "onboarding"]
+      "tags": [
+        "skill",
+        "mcp",
+        "testing",
+        "probe",
+        "onboarding"
+      ]
     },
     {
       "name": "waypoints",
-      "source": { "source": "url", "url": "https://github.com/haiggoh/waypoints.git" },
+      "source": {
+        "source": "url",
+        "url": "https://github.com/haiggoh/waypoints.git"
+      },
       "description": "Surfaces your open tasks / to-dos as a persistent SessionStart banner ('waypoints' still ahead of you) that stays until each is marked done. Forward-looking companion to resume-interrupted; distinct from Claude Code's native rewind checkpoints. Supports optional surface-on dates. Disable via /plugin if unwanted.",
       "category": "productivity",
-      "tags": ["skill", "hook", "reminders", "todo", "sessions", "continuity"]
+      "tags": [
+        "skill",
+        "hook",
+        "reminders",
+        "todo",
+        "sessions",
+        "continuity"
+      ]
     },
     {
       "name": "audit-loose-ends",
-      "source": { "source": "url", "url": "https://github.com/haiggoh/audit-loose-ends.git" },
+      "source": {
+        "source": "url",
+        "url": "https://github.com/haiggoh/audit-loose-ends.git"
+      },
       "description": "End-of-task reconciliation of your durable records (memories, project notes, reminders, task list, and the waypoints store) so nothing is left redundant, orphaned, or falsely flagged as to-do when it's already done. SessionStart nudge + skill. Companion to waypoints; distinct from no-hidden-changes (which reconciles a rule once at first run).",
       "category": "productivity",
-      "tags": ["skill", "hook", "sessions", "housekeeping", "records", "waypoints"]
+      "tags": [
+        "skill",
+        "hook",
+        "sessions",
+        "housekeeping",
+        "records",
+        "waypoints"
+      ]
     },
     {
       "name": "run-to-completion",
-      "source": { "source": "url", "url": "https://github.com/haiggoh/run-to-completion.git" },
+      "source": {
+        "source": "url",
+        "url": "https://github.com/haiggoh/run-to-completion.git"
+      },
       "description": "Offer continuous, autonomous execution for elaborate multi-step work: ask blocking matter-of-taste questions up front, then run the plan to completion without stopping between steps, folding in mid-run prompts at natural task seams. Does not relax destructive-action confirmations.",
       "category": "productivity",
-      "tags": ["skill", "hook", "behavior", "autonomy", "planning", "execution", "workflow"]
+      "tags": [
+        "skill",
+        "hook",
+        "behavior",
+        "autonomy",
+        "planning",
+        "execution",
+        "workflow"
+      ]
     },
     {
       "name": "get-haiggoh",
-      "source": { "source": "url", "url": "https://github.com/haiggoh/get-haiggoh.git" },
+      "source": {
+        "source": "url",
+        "url": "https://github.com/haiggoh/get-haiggoh.git"
+      },
       "description": "Install and keep up to date every published haiggoh plugin from one place. SessionStart hook nudges when something new or outdated appears; a confirming skill does the actual install/update. Canonical home of the haiggoh marketplace catalog.",
       "category": "productivity",
-      "tags": ["skill", "hook", "marketplace", "install", "bootstrap", "meta"]
+      "tags": [
+        "skill",
+        "hook",
+        "marketplace",
+        "install",
+        "bootstrap",
+        "meta"
+      ]
     },
     {
       "name": "brief-agents",
-      "source": { "source": "url", "url": "https://github.com/haiggoh/brief-agents.git" },
+      "source": {
+        "source": "url",
+        "url": "https://github.com/haiggoh/brief-agents.git"
+      },
       "description": "A subagent inherits none of your durable rules — not your CLAUDE.md, not your memory, not your installed-plugin nudges — so it can blindly violate one it never heard of. Scans all three layers into one compact ~/.claude/agent-briefing-index.md (auto-regenerated when the sources change) and nudges you to brief the subagent with it before delegating architecture or code work.",
       "category": "productivity",
-      "tags": ["skill", "hook", "subagents", "delegation", "briefing", "context", "rules"]
+      "tags": [
+        "skill",
+        "hook",
+        "subagents",
+        "delegation",
+        "briefing",
+        "context",
+        "rules"
+      ]
     },
     {
       "name": "free-agents",
-      "source": { "source": "url", "url": "https://github.com/haiggoh/free-agents.git" },
+      "source": {
+        "source": "url",
+        "url": "https://github.com/haiggoh/free-agents.git"
+      },
       "description": "Run Claude Code on FREE inference — two equal lanes: local MLX models on Apple Silicon, and free cloud APIs (Gemini, NVIDIA, Groq, and a dozen more). Main use: dispatch delegatable sub-tasks from your paid session to a free model, keeping the capable model driving. Also runs full free sessions: `csl` for local, `csl remote` for free APIs — remote is faster and is the preferred lane for most interactive work, local wins offline and for long unattended runs. Additive overlay: private paths/keys stay in a gitignored config.local, settings.json untouched. Works whether Claude Code connects to Anthropic directly or via a gateway.",
       "category": "productivity",
-      "tags": ["local", "remote", "free", "mlx", "apple-silicon", "offline", "budget", "inference", "agents", "overlay"]
+      "tags": [
+        "local",
+        "remote",
+        "free",
+        "mlx",
+        "apple-silicon",
+        "offline",
+        "budget",
+        "inference",
+        "agents",
+        "overlay"
+      ]
     },
     {
       "name": "cost-tracker",
-      "source": { "source": "url", "url": "https://github.com/haiggoh/cost-tracker.git" },
-      "description": "Reports Claude Code spend on three explicitly labelled axes \u2014 session lifetime, today across all sessions, and free local inference \u2014 from the authoritative statusline cost ledger. Period-aware (today / week / month / --since), quarantines structurally invalid records with visible diagnostics instead of counting them, and ships the statusline wrapper PATTERN rather than claiming the status line. Calibrates its own daily total against the gateway's stated cumulative at a budget refusal \u2014 the one external reference available \u2014 and reports the size and sign of any gap instead of trusting its own arithmetic.",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/haiggoh/cost-tracker.git"
+      },
+      "description": "Reports Claude Code spend on three explicitly labelled axes — session lifetime, today across all sessions, and free local inference — from the authoritative statusline cost ledger. Period-aware (today / week / month / --since), quarantines structurally invalid records with visible diagnostics instead of counting them, and ships the statusline wrapper PATTERN rather than claiming the status line. Calibrates its own daily total against the gateway's stated cumulative at a budget refusal — the one external reference available — and reports the size and sign of any gap instead of trusting its own arithmetic.",
       "category": "productivity",
-      "tags": ["cost", "budget", "spend", "statusline", "ledger", "tokens", "local-inference", "savings", "calibration"]
+      "tags": [
+        "cost",
+        "budget",
+        "spend",
+        "statusline",
+        "ledger",
+        "tokens",
+        "local-inference",
+        "savings",
+        "calibration"
+      ]
+    },
+    {
+      "name": "lasting-plans",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/haiggoh/lasting-plans.git"
+      },
+      "description": "Claude Code deletes plans older than cleanupPeriodDays (30 days by default). Lasting Plans keeps every plan and playbook in visible, Git-versioned archives (~/Claude-plans, ~/Claude-playbooks) that the sweep cannot touch, records creation dates and Finder tags, and ships a watch-folder LaunchAgent plus a CLI to list, search, diff and restore.",
+      "category": "productivity",
+      "tags": [
+        "plans",
+        "playbooks",
+        "backup",
+        "git",
+        "retention",
+        "launchd"
+      ]
     }
   ]
 }
