@@ -214,3 +214,36 @@ def test_is_our_shim_reads_bytes_not_lines(world):
 def test_unknown_policy_is_rejected(world):
     with pytest.raises(ValueError):
         s.plan_shims(world.installed(), policy="nuke", directory=str(world.bin))
+
+
+def test_create_does_not_clobber_a_file_that_appears_after_planning(world):
+    world.plugin("waypoints", "0.12.0", ["waypoints"])
+    acts = s.plan_shims(world.installed(), policy="skip", directory=str(world.bin))
+    assert acts[0]["action"] == "create"
+    (world.bin / "waypoints").write_text("USER FILE\n")      # another writer wins the race
+    s.apply_action(acts[0])
+    assert (world.bin / "waypoints").read_text() == "USER FILE\n"
+    assert acts[0]["action"] == "skip" and "appeared" in acts[0]["detail"]
+    assert list(world.bin.glob("*tmp*")) == []
+
+
+def test_create_does_not_follow_a_dangling_symlink_planted_after_planning(world):
+    world.plugin("waypoints", "0.12.0", ["waypoints"])
+    acts = s.plan_shims(world.installed(), policy="skip", directory=str(world.bin))
+    (world.bin / "waypoints").symlink_to(world.home / "nowhere")
+    s.apply_action(acts[0])
+    assert (world.bin / "waypoints").is_symlink() and acts[0]["action"] == "skip"
+    assert not (world.home / "nowhere").exists()
+
+
+def test_refresh_does_not_clobber_a_foreign_file_that_replaced_our_shim(world):
+    world.plugin("waypoints", "0.12.0", ["waypoints"])
+    _apply(world)
+    shim = world.bin / "waypoints"
+    shim.write_text(shim.read_text() + "# drift\n")
+    acts = s.plan_shims(world.installed(), policy="skip", directory=str(world.bin))
+    assert acts[0]["action"] == "refresh"
+    shim.write_text("USER FILE\n")                            # swapped in after planning
+    s.apply_action(acts[0])
+    assert shim.read_text() == "USER FILE\n" and acts[0]["action"] == "skip"
+    assert not world.backups.exists()

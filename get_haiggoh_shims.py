@@ -199,13 +199,26 @@ def apply_action(act):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     if act["action"] == "overwrite":
         act["backup"] = _backup(path)
-    tmp = f"{path}.haiggoh-tmp-{os.getpid()}"
+    tmp = f"{path}.haiggoh-tmp-{os.getpid()}-{os.urandom(4).hex()}"
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o755)
     try:
         with os.fdopen(fd, "w") as f:
             f.write(act["text"])
         os.chmod(tmp, 0o755)
-        os.replace(tmp, path)
+        if act["action"] == "create":
+            # link() refuses ANY existing name (a dangling symlink included), so a file that
+            # appeared after planning is never clobbered -- no check-then-write window.
+            try:
+                os.link(tmp, path)
+            except FileExistsError:
+                act.update(action="skip", detail="appeared after planning; left untouched")
+                return act
+        else:
+            if act["action"] == "refresh" and not is_our_shim(path):
+                act.update(action="skip",
+                           detail="changed after planning (no longer our shim); left untouched")
+                return act
+            os.replace(tmp, path)
     finally:
         if os.path.lexists(tmp):
             os.remove(tmp)
