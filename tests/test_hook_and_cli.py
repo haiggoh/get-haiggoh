@@ -83,6 +83,14 @@ def test_hook_never_shells_out_to_git_ls_remote(tmp_path):
     ]})
     _write_json(installed_path, {"plugins": {"measure-twice@haiggoh": [{"gitCommitSha": "deadbeef"}]}})
 
+    fake_bin = tmp_path / "fakebin"
+    fake_bin.mkdir()
+    called = tmp_path / "git-was-called"
+    fake_git = fake_bin / "git"
+    # `: >` is a shell builtin: PATH holds only fake_bin, so an external `touch` would not be found
+    fake_git.write_text(f"#!/bin/sh\n: > '{called}'\n")
+    fake_git.chmod(0o755)
+
     env = {
         "GET_HAIGGOH_KNOWN_MARKETPLACES_FILE": known_path,
         "GET_HAIGGOH_INSTALLED_PLUGINS_FILE": installed_path,
@@ -90,11 +98,17 @@ def test_hook_never_shells_out_to_git_ls_remote(tmp_path):
         "GET_HAIGGOH_REFRESH_STAMP_FILE": str(tmp_path / "stamp.json"),
         "GET_HAIGGOH_SELF_NAME": "get-haiggoh",
         "GET_HAIGGOH_SKIP_NETWORK_REFRESH": "1",
-        "PATH": "",  # no `git` on PATH at all -- any git-ls-remote call would raise/fail
+        # The hook now compares plugin VERSIONS fetched over HTTP, not shas from git. Without this
+        # it makes a real manifest request (~20s offline), which blew the 10s test timeout.
+        "GET_HAIGGOH_SKIP_REMOTE_VERSION_CHECK": "1",
+        # A fake `git` that records being called. An absent git is not a usable tripwire: the hook
+        # swallows every exception and exits 0, so a failed call looks exactly like no call.
+        "PATH": str(fake_bin),
     }
     r = _run(env)
     assert r.returncode == 0
     assert r.stdout.strip() == ""  # measure-twice is installed and not missing -- nothing to nudge
+    assert not called.exists(), "the hook invoked git"
 
 
 def test_hook_prints_nothing_when_stdin_is_malformed(tmp_path):
