@@ -7,6 +7,8 @@ small version-independent launchers. No subprocess or network here; the CLI and 
 """
 import os
 import re
+import shutil
+import time
 
 MARKER = "haiggoh-shim"
 PREFIX = "haiggoh-"
@@ -102,3 +104,139 @@ def render_shim(plugin, command):
     if not (valid_name(plugin) and valid_name(command)):
         raise ValueError(f"unsafe shim name: {plugin!r} / {command!r}")
     return _SHIM.replace("__PLUGIN__", plugin).replace("__COMMAND__", command)
+
+
+def is_our_shim(path):
+    """True only for a REGULAR file (never a symlink) whose line 2 is our marker. Reads 256 bytes:
+    ~/.local/bin holds multi-megabyte binaries with no newline, and a line read would slurp them."""
+    try:
+        if os.path.islink(path) or not os.path.isfile(path):
+            return False
+        with open(path, "rb") as f:
+            head = f.read(256).decode("utf-8", "replace").splitlines()
+    except OSError:
+        return False
+    return len(head) > 1 and head[1].startswith("# " + MARKER)
+
+
+def _decide(path, text):
+    """-> (state, action, detail) for ONE target path. `collision` means: taken by something that
+    is not ours; the caller's policy decides what happens next."""
+    if not os.path.lexists(path):
+        return "absent", "create", ""
+    if os.path.isdir(path) and not os.path.islink(path):
+        return "foreign", "skip", "is a directory"
+    if is_our_shim(path):
+        with open(path) as f:
+            same = f.read() == text
+        return ("current", "noop", "") if same else ("stale", "refresh", "")
+    kind = f"symlink -> {os.readlink(path)}" if os.path.islink(path) else "regular file"
+    return "foreign", "collision", f"exists and is not a haiggoh shim ({kind})"
+
+
+def plan_shims(installed, policy="skip", directory=None):
+    """Decide, WITHOUT touching the disk, what each wanted shortcut needs."""
+    if policy not in POLICIES:
+        raise ValueError(f"policy must be one of {POLICIES}, got {policy!r}")
+    directory = directory or shim_dir()
+    actions, claimed = [], {}
+    for plugin, command in wanted(installed):
+        text = render_shim(plugin, command)
+        name = command
+        path = os.path.join(directory, name)
+        act = {"plugin": plugin, "command": command, "name": name, "path": path, "text": text}
+        if name in claimed:
+            act.update(state="duplicate", action="skip",
+                       detail=f"also declared by {claimed[name]}, which came first")
+            actions.append(act)
+            continue
+        claimed[name] = plugin
+        state, action, detail = _decide(path, text)
+        if action == "collision":
+            if policy == "overwrite":
+                action = "overwrite"
+            elif policy == "prefix":
+                name = PREFIX + command
+                path = os.path.join(directory, name)
+                state2, action2, detail2 = _decide(path, text)
+                if action2 == "collision":
+                    action, detail = "skip", f"{name} is taken too ({detail2})"
+                else:
+                    state, action = state2, action2
+                    detail = f"{command} was taken ({detail}); using {name}"
+            else:
+                action = "skip"
+        act.update(name=name, path=path, state=state, action=action, detail=detail)
+        actions.append(act)
+    return actions
+
+
+def _backup(path):
+    """Record what is about to be replaced. A symlink is recorded as its target text (restore with
+    `ln -sfn "$(cat FILE)" PATH`); a regular file is copied with its mode. Raises on failure, which
+    aborts the overwrite: no backup, no replace."""
+    os.makedirs(backup_dir(), exist_ok=True)
+    base = os.path.join(backup_dir(), f"{os.path.basename(path)}.{time.strftime('%Y%m%d-%H%M%S')}")
+    suffix = ".link" if os.path.islink(path) else ".bak"
+    dest, n = base + suffix, 1
+    while os.path.lexists(dest):
+        dest, n = f"{base}-{n}{suffix}", n + 1
+    if os.path.islink(path):
+        with open(dest, "w") as f:
+            f.write(os.readlink(path) + "\n")
+    else:
+        shutil.copy2(path, dest)
+    return dest
+
+
+def apply_action(act):
+    """Carry out one planned action. Writes a temp file in the same directory and os.replace()s it
+    over the target, which replaces a symlink ITSELF instead of writing through it into whatever
+    it points at."""
+    if act["action"] not in ("create", "refresh", "overwrite"):
+        return act
+    path = act["path"]
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    if act["action"] == "overwrite":
+        act["backup"] = _backup(path)
+    tmp = f"{path}.haiggoh-tmp-{os.getpid()}"
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o755)
+    try:
+        with os.fdopen(fd, "w") as f:
+            f.write(act["text"])
+        os.chmod(tmp, 0o755)
+        os.replace(tmp, path)
+    finally:
+        if os.path.lexists(tmp):
+            os.remove(tmp)
+    return act
+
+
+def on_path(directory):
+    real = os.path.realpath(directory)
+    return real in [os.path.realpath(p) for p in os.environ.get("PATH", "").split(os.pathsep) if p]
+
+
+_VERBS = {"create": ("would create", "created"), "refresh": ("would refresh", "refreshed"),
+          "noop": ("current", "current"), "overwrite": ("would OVERWRITE", "OVERWROTE"),
+          "skip": ("SKIPPED", "SKIPPED")}
+
+
+def format_report(actions, directory, applied):
+    lines = [f"PATH shortcuts in {directory}:"]
+    if not actions:
+        lines.append("  (no installed haiggoh plugin declares a shortcut)")
+    for a in actions:
+        verb = _VERBS[a["action"]][1 if applied else 0]
+        extra = ""
+        if a["action"] == "skip":
+            extra = (f": {a['detail']}. Options: --on-collision=overwrite (the old one is backed up "
+                     f"first) or --on-collision=prefix (installs {PREFIX}{a['command']})")
+        elif a["action"] == "overwrite":
+            extra = f" (was: {a['detail']}" + (f"; backup {a['backup']})" if a.get("backup") else ")")
+        elif a["detail"]:
+            extra = f" ({a['detail']})"
+        lines.append(f"  {a['name']:<18} {verb}  [{a['plugin']}]{extra}")
+    if actions and not on_path(directory):
+        lines.append(f"  warning: {directory} is not on your PATH, so these names will not resolve yet")
+    return "\n".join(lines)
