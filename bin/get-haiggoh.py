@@ -141,7 +141,7 @@ def _installed_now():
     return c.load_installed(c.load_json(c.installed_plugins_path()))
 
 
-def cmd_apply(only=None, category=None):
+def cmd_apply(only=None, category=None, policy="skip"):
     """Run the plan, then VERIFY each result by outcome instead of by exit status.
 
     `claude plugin update` exits 0 for "the clone succeeded", which is not the same as "this
@@ -185,7 +185,48 @@ def cmd_apply(only=None, category=None):
             print(f"update {name}: NOT APPLIED (exited 0 but still {after or 'unrecorded'}, "
                   f"expected {expected})")
             failed.append(name)
+    if not os.environ.get("GET_HAIGGOH_NO_SHIMS"):
+        if cmd_shims("apply", only=only, policy=policy):
+            failed.append("shims")
     return 1 if failed else 0
+
+
+def cmd_shims(mode, only=None, policy="skip"):
+    """Plan or create the PATH shortcuts for installed plugins (see get_haiggoh_shims)."""
+    import get_haiggoh_shims as s
+    installed = c.load_installed(c.load_json(c.installed_plugins_path()))
+    if only:
+        installed = {name: info for name, info in installed.items() if name in set(only)}
+    actions = s.plan_shims(installed, policy=policy)
+    try:
+        if mode == "apply":
+            for act in actions:
+                s.apply_action(act)
+    except OSError as exc:
+        print(f"shims: FAILED: {exc}", file=sys.stderr)
+        return 1
+    print(s.format_report(actions, s.shim_dir(), applied=(mode == "apply")))
+    return 0
+
+
+def _parse_policy_args(argv):
+    """Pull --on-collision VALUE / --on-collision=VALUE out of argv.
+    Returns (policy, leftover, error_or_None)."""
+    import get_haiggoh_shims as s
+    policy, leftover, i = "skip", [], 0
+    while i < len(argv):
+        arg = argv[i]
+        if arg == "--on-collision" and i + 1 < len(argv):
+            policy, i = argv[i + 1], i + 2
+        elif arg.startswith("--on-collision="):
+            policy, i = arg[len("--on-collision="):], i + 1
+        else:
+            leftover.append(arg)
+            i += 1
+    if policy not in s.POLICIES:
+        return "skip", leftover, (
+            f"--on-collision must be one of {', '.join(s.POLICIES)} (got {policy!r})")
+    return policy, leftover, None
 
 
 def _parse_selection_args(argv):
@@ -217,24 +258,39 @@ def _parse_selection_args(argv):
 
 def print_help():
     """Print help message."""
-    print("get-haiggoh CLI - Manage haiggoh plugins")
-    print("")
+    print("get-haiggoh CLI - install, update and put on PATH every published haiggoh plugin")
+    print()
     print("Usage:")
-    print("  get-haiggoh.py plan [--only name1,name2] [--category NAME]")
-    print("    Show what would be installed/updated (dry run)")
-    print("")
-    print("  get-haiggoh.py apply [--only name1,name2] [--category NAME]")
-    print("    Actually install/update plugins")
-    print("")
+    print("  get-haiggoh                        (no arguments) open the interactive menu")
+    print("  get-haiggoh plan    [--only n1,n2] [--category NAME]")
+    print("      Show what would be installed/updated (dry run)")
+    print("  get-haiggoh apply   [--only n1,n2] [--category NAME] [--on-collision POLICY]")
+    print("  get-haiggoh upgrade [...same...]    alias of apply")
+    print("      Install/update plugins, then create their PATH shortcuts")
+    print("  get-haiggoh shims [plan|apply] [--only n1,n2] [--on-collision POLICY]")
+    print("      Only the PATH shortcuts. Bare `shims` is a dry run (same as `shims plan`)")
+    print()
     print("Options:")
-    print("  --only name1,name2  Limit operation to specific plugin names (comma-separated)")
-    print("  --category NAME     Limit operation to plugins in specific category")
-    print("  --help              Show this help message")
-    print("")
+    print("  --only name1,name2     Limit to specific plugin names (comma-separated)")
+    print("  --category NAME        Limit to plugins in a specific category")
+    print("  --on-collision POLICY  What to do when a command name is already taken by something")
+    print("                         that is not a haiggoh shim: skip (default, reported),")
+    print("                         overwrite (old link/file is backed up first), or")
+    print("                         prefix (install it as haiggoh-<name>)")
+    print("  --help                 Show this help message")
+    print()
+    print("Environment:")
+    print("  GET_HAIGGOH_NO_SHIMS=1         never create shortcuts (apply and the SessionStart hook)")
+    print("  GET_HAIGGOH_SHIM_DIR           where shortcuts go (default ~/.local/bin)")
+    print("  GET_HAIGGOH_SHIM_BACKUP_DIR    where overwritten links/files are recorded")
+    print("                                 (default ~/.local/state/get-haiggoh/shim-backups)")
+    print("  GET_HAIGGOH_INSTALLED_PLUGINS_FILE, GET_HAIGGOH_CACHE_DIR")
+    print("                                 override what the shortcuts resolve against")
+    print()
     print("Examples:")
-    print("  get-haiggoh.py plan")
-    print("  get-haiggoh.py apply --only video-use,waypoints")
-    print("  get-haiggoh.py plan --category utility")
+    print("  get-haiggoh upgrade")
+    print("  get-haiggoh shims plan --on-collision=overwrite")
+    print("  get-haiggoh apply --only waypoints")
 
 
 def main(argv):
@@ -243,18 +299,28 @@ def main(argv):
         print_help()
         return 0
 
-    if not argv or argv[0] not in ("plan", "apply"):
-        print("usage: get-haiggoh.py plan|apply [--only name1,name2] [--category NAME]",
-              file=sys.stderr)
+    usage = ("usage: get-haiggoh.py plan|apply|upgrade|shims [plan|apply] [--only n1,n2] "
+             "[--category NAME] [--on-collision skip|overwrite|prefix]")
+    if not argv or argv[0] not in ("plan", "apply", "upgrade", "shims"):
+        print(usage, file=sys.stderr)
         return 2
     cmd, rest = argv[0], argv[1:]
+    mode = "plan"
+    if cmd == "shims" and rest and rest[0] in ("plan", "apply"):
+        mode, rest = rest[0], rest[1:]
     only, category, leftover = _parse_selection_args(rest)
-    if leftover:
-        print(f"usage: get-haiggoh.py {cmd} [--only name1,name2] [--category NAME]"
-              f" (unrecognized: {' '.join(leftover)})", file=sys.stderr)
+    policy, leftover, error = _parse_policy_args(leftover)
+    if error:
+        print(f"{usage}\n{error}", file=sys.stderr)
         return 2
-    return cmd_plan(only=only, category=category) if cmd == "plan" \
-        else cmd_apply(only=only, category=category)
+    if leftover:
+        print(f"{usage} (unrecognized: {' '.join(leftover)})", file=sys.stderr)
+        return 2
+    if cmd == "plan":
+        return cmd_plan(only=only, category=category)
+    if cmd == "shims":
+        return cmd_shims(mode, only=only, policy=policy)
+    return cmd_apply(only=only, category=category, policy=policy)  # apply and upgrade
 
 
 if __name__ == "__main__":
