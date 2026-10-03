@@ -1,0 +1,3 @@
+# Commands this plugin puts on the user's shell PATH (one bare name per line).
+# get-haiggoh reads this file from every installed plugin; see docs/superpowers/specs/.
+get-haiggoh
