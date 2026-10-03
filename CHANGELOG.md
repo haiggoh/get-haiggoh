@@ -2,6 +2,40 @@
 
 All notable changes to `get-haiggoh` are documented in this file.
 
+## [0.8.0] - 2026-10-03
+
+### Added — PATH shortcuts
+
+- `get-haiggoh apply` (and the new `upgrade` alias) now puts every participating plugin's CLI
+  on your shell PATH through version-independent shims in `~/.local/bin`. Plugins opt in with a
+  `shortcuts` file at their root (one bare command name per line); get-haiggoh reads it from
+  each installed plugin, so no plugin names are hardcoded here.
+- `get-haiggoh shims [plan|apply] [--only ..] [--on-collision skip|overwrite|prefix]`. A bare
+  `shims` is a dry run.
+- A `get-haiggoh` command: no arguments opens the interactive menu, anything else goes to
+  `get-haiggoh.py`. Without a terminal, a bare run exits 2 with a usage line instead of crashing.
+- The SessionStart hook adds missing, non-colliding shortcuts and names them in its banner.
+
+### Safety
+
+- A name already taken by something that is not a haiggoh shim is **skipped and reported**;
+  the report names the alternatives. `overwrite` records the old symlink target (or copies the
+  old file) to `~/.local/state/get-haiggoh/shim-backups/` first, and replaces a symlink itself
+  rather than writing through it. `prefix` installs `haiggoh-<name>`.
+- A shim resolves the plugin from `installed_plugins.json` at run time, falling back to the
+  highest numeric version directory, so plugin updates never break it.
+- The hook never overwrites or prefixes. `GET_HAIGGOH_NO_SHIMS=1` disables shortcut creation in
+  both `apply` and the hook.
+- cost-tracker's own `install.sh` treats a haiggoh shim as a foreign file at
+  `~/.local/bin/cost-tracker` and replaces it with its checkout link (after backing it up).
+  Pick one mechanism per machine.
+
+### Fixed
+
+- `test_hook_never_shells_out_to_git_ls_remote` timed out at 10 s because the hook's daily
+  version check made a real HTTP request. The test now skips it, and uses a fake `git` that
+  records calls, since an absent `git` could never fail a hook that swallows exceptions.
+
 ## [0.7.0] - 2026-09-22
 
 ### Documented — the default-branch contract, and where dogfooding goes

@@ -85,28 +85,42 @@ def _fetch_remote_versions(catalog, installed):
     return versions
 
 
-def main():
+def _add_missing_shims(installed):
+    """Create PATH shims that collide with nothing. Never overwrites or prefixes: that is an
+    explicit `get-haiggoh shims apply --on-collision=...`. Returns a one-line note naming the
+    shortcuts just CREATED ('' if none). Fail-safe: any error -> ''."""
+    if os.environ.get("GET_HAIGGOH_NO_SHIMS"):
+        return ""
     try:
-        json.loads(sys.stdin.read() or "{}")
+        import get_haiggoh_shims as s
+        created = []
+        for act in s.plan_shims(installed, policy="skip"):
+            if act["action"] in ("create", "refresh"):
+                s.apply_action(act)
+                if act["action"] == "create":
+                    created.append(act["name"])
+        return ("get-haiggoh: added PATH shortcuts: " + ", ".join(created)) if created else ""
     except Exception:
-        return  # malformed stdin -- fail-safe, no output
+        return ""
 
+
+def _nudge_banner():
     known = c.load_json(c.known_marketplaces_path())
     marketplace_path = c.resolve_marketplace_json_path(known, "haiggoh")
     if not marketplace_path:
-        return  # marketplace not registered on this machine -- nothing to check
+        return ""  # marketplace not registered on this machine -- nothing to check
 
     today = c.today()
     stamp_path = c.refresh_stamp_path()
     refreshing = c.should_refresh(stamp_path, today)
     if refreshing:
         if not _refresh_marketplace():
-            return  # refresh failed/timed out -- do NOT diff against possibly-stale data
+            return ""  # refresh failed/timed out -- do NOT diff against possibly-stale data
 
     marketplace_data = c.load_json(marketplace_path)
     catalog = c.load_marketplace_entries(marketplace_data)
     if not catalog:
-        return
+        return ""
 
     installed_data = c.load_json(c.installed_plugins_path())
     installed = c.load_installed(installed_data)
@@ -124,7 +138,22 @@ def main():
     outdated = c.filter_outdated_by_skip(
         c.compute_outdated(catalog, installed, remote_versions, SELF_NAME), skip_list)
 
-    banner = c.format_nudge(missing, outdated)
+    return c.format_nudge(missing, outdated)
+
+
+def main():
+    try:
+        json.loads(sys.stdin.read() or "{}")
+    except Exception:
+        return  # malformed stdin -- fail-safe, no output
+
+    # Shortcuts need only the local installed record, so they do not wait on the marketplace.
+    shim_note = _add_missing_shims(c.load_installed(c.load_json(c.installed_plugins_path())))
+    try:
+        banner = _nudge_banner()
+    except Exception:
+        banner = ""
+    banner = "\n".join(part for part in (banner, shim_note) if part)
     if banner:
         print(json.dumps({"hookSpecificOutput": {"hookEventName": "SessionStart",
                                                    "additionalContext": banner}}))

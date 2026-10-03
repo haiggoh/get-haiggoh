@@ -58,6 +58,34 @@ When choosing specific plugin options, you can enter:
 # Choose option 4, then enter: --category utility
 ```
 
+## PATH shortcuts
+
+After `get-haiggoh apply` (or its alias `get-haiggoh upgrade`), plugin CLIs such as `waypoints`
+are available by bare name in your own shell. `get-haiggoh` with no arguments opens the menu.
+
+A plugin opts in by shipping a `shortcuts` file at its root, one command per line (`#` comments
+allowed); each command must exist as an executable in that plugin's `bin/`. get-haiggoh writes a
+small launcher for each into `~/.local/bin` (make sure that directory is on your PATH). The
+launcher looks up the installed plugin version each time it runs, so plugin updates never break it.
+
+```bash
+get-haiggoh shims                              # dry run: what would be created
+get-haiggoh shims apply                        # create them (apply/upgrade also do this)
+get-haiggoh shims apply --on-collision=prefix  # taken names become haiggoh-<name>
+```
+
+If a name is already taken by something that is not a haiggoh shim, the default is to **skip and
+report** it. `--on-collision=overwrite` replaces it after recording the old symlink target (or a
+copy of the old file) in `~/.local/state/get-haiggoh/shim-backups/`. To undo an overwritten link:
+
+```bash
+ln -sfn "$(cat ~/.local/state/get-haiggoh/shim-backups/<name>.<stamp>.link)" ~/.local/bin/<name>
+```
+
+The SessionStart hook also adds missing shortcuts, but only ones that collide with nothing.
+Environment: `GET_HAIGGOH_NO_SHIMS=1` disables shortcut creation; `GET_HAIGGOH_SHIM_DIR` and
+`GET_HAIGGOH_SHIM_BACKUP_DIR` move the two directories (`get-haiggoh --help` lists all).
+
 ## What it pulls: the default branch, on purpose
 
 `get-haiggoh` resolves every plugin from its repository's **default branch**, and its
