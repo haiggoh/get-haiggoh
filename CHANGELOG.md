@@ -2,6 +2,14 @@
 
 All notable changes to `get-haiggoh` are documented in this file.
 
+## [0.8.1] - 2026-10-04
+
+### Fixed — Performance regression in `plan`/`apply`
+
+- `get-haiggoh plan` and `apply` were fetching remote plugin versions **sequentially** (one HTTP request at a time) instead of in parallel. With 14 installed plugins this caused ~10s latency per call.
+- Changed `_compute()` in `bin/get-haiggoh.py` to use `ThreadPoolExecutor` (max 8 workers), matching the pattern already used in `hooks/check-installed.py:_fetch_remote_versions`.
+- `plan` now completes in ~0.25s instead of ~6-10s. The hook was already fast because it caches remote versions once/day.
+
 ## [0.8.0] - 2026-10-03
 
 ### Added — PATH shortcuts
