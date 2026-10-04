@@ -101,14 +101,20 @@ def _compute(only=None, category=None):
     catalog = c.filter_catalog_by_selection(catalog, names=only, category=category)
     installed = c.load_installed(c.load_json(c.installed_plugins_path()))
 
+    # Parallel, bounded manifest sweep over installed catalog entries with a repo URL.
+    # Same pattern as hooks/check-installed.py:_fetch_remote_versions
+    targets = [(e["name"], c.entry_repo_url(e)) for e in catalog
+               if e.get("name") and e["name"] != SELF_NAME and e["name"] in installed
+               and c.entry_repo_url(e)]
     remote_versions = {}
-    for entry in catalog:
-        name = entry["name"]
-        if name == SELF_NAME or name not in installed:
-            continue
-        url = c.entry_repo_url(entry)
-        if url:
-            remote_versions[name] = _remote_plugin_version(url)
+    if targets:
+        try:
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor(max_workers=min(8, len(targets))) as ex:
+                for name, version in ex.map(lambda t: (t[0], _remote_plugin_version(t[1])), targets):
+                    remote_versions[name] = version
+        except Exception:
+            pass
 
     missing = c.compute_missing(catalog, installed, SELF_NAME)
     outdated = c.compute_outdated(catalog, installed, remote_versions, SELF_NAME)
