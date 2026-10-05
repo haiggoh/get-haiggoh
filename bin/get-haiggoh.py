@@ -202,6 +202,44 @@ def cmd_apply(only=None, category=None, policy="skip"):
     command that exited 0 without moving the version is reported NOT APPLIED and counted as a
     failure."""
     missing, outdated, all_status = _compute(only=only, category=category)
+
+    # First, show the full plan status (same as cmd_plan)
+    if missing:
+        print("Would install:")
+        for name in missing:
+            print(f"  + {name}")
+    if outdated:
+        print("Would update:")
+        for item in outdated:
+            print(f"  ^ {item['name']}  ({item['installed_version'] or '?'} -> "
+                  f"{item['remote_version']})")
+
+    # List current plugins with version
+    current_plugins = [s for s in all_status if s["status"] == "current"]
+    if current_plugins:
+        print("Current:")
+        for item in current_plugins:
+            ver = item['installed_version'] or '?'
+            print(f"  = {item['name']}  {ver} (current)")
+
+    # Show other statuses
+    missing_status = [s for s in all_status if s["status"] == "missing"]
+    if missing_status:
+        print("Missing (not installed):")
+        for item in missing_status:
+            print(f"  - {item['name']} (not installed)")
+
+    unknown_plugins = [s for s in all_status if s["status"] == "unknown"]
+    if unknown_plugins:
+        print("Unknown status:")
+        for item in unknown_plugins:
+            print(f"  ? {item['name']}")
+
+    if not missing and not outdated and not missing_status and not unknown_plugins:
+        print("All haiggoh plugins are current.")
+
+    print()  # blank line before apply actions
+
     failed = []
     for name in missing:
         r = subprocess.run(["claude", "plugin", "install", f"{name}@haiggoh"], capture_output=True, text=True)
@@ -349,12 +387,15 @@ def main(argv):
         print_help()
         return 0
 
-    usage = ("usage: get-haiggoh.py plan|apply|upgrade|shims [plan|apply] [--only n1,n2] "
+    usage = ("usage: get-haiggoh.py plan|dryrun|apply|upgrade|shims [plan|apply] [--only n1,n2] "
              "[--category NAME] [--on-collision skip|overwrite|prefix]")
-    if not argv or argv[0] not in ("plan", "apply", "upgrade", "shims"):
+    if not argv or argv[0] not in ("plan", "dryrun", "apply", "upgrade", "shims"):
         print(usage, file=sys.stderr)
         return 2
     cmd, rest = argv[0], argv[1:]
+    # dryrun is an alias for plan
+    if cmd == "dryrun":
+        cmd = "plan"
     mode = "plan"
     if cmd == "shims" and rest and rest[0] in ("plan", "apply"):
         mode, rest = rest[0], rest[1:]
