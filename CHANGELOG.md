@@ -2,6 +2,18 @@
 
 All notable changes to `get-haiggoh` are documented in this file.
 
+## [0.8.8] - 2026-10-05
+
+### Added
+- **get-haiggoh self-update**: get-haiggoh now includes itself in plan/apply output with version number and (current) marker
+- **Self-update capability**: get-haiggoh can now update itself via plan/apply like all other haiggoh plugins
+- **dryrun alias**: get-haiggoh dryrun accepted as alias for plan
+- **Full status always shown**: get-haiggoh plan no longer silently returns 'Nothing to do' - always shows full status of all 13 plugins
+
+### Changed
+- get-haiggoh plan no longer silently returns 'Nothing to do' - always shows full status of all 13 plugins with versions
+- cmd_apply shows same full status before applying
+
 ## [0.8.4] - 2026-10-05
 
 ### Added
