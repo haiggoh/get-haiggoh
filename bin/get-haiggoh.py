@@ -121,14 +121,33 @@ def _compute(only=None, category=None):
     skip_list = c.load_skip_list()
     missing = c.filter_missing_by_skip(missing, skip_list)
     outdated = c.filter_outdated_by_skip(outdated, skip_list)
-    return missing, outdated
+
+    # Build full status for all catalog entries (including current ones)
+    all_status = []
+    for entry in catalog:
+        name = entry["name"]
+        if name == SELF_NAME:
+            continue
+        inst = installed.get(name)
+        remote_ver = remote_versions.get(name)
+        installed_ver = inst.get("version") if inst else None
+
+        if name in missing:
+            all_status.append({"name": name, "status": "missing", "installed_version": None, "remote_version": None})
+        elif any(o["name"] == name for o in outdated):
+            out = next(o for o in outdated if o["name"] == name)
+            all_status.append({"name": name, "status": "outdated", "installed_version": out["installed_version"], "remote_version": out["remote_version"]})
+        elif inst:
+            all_status.append({"name": name, "status": "current", "installed_version": installed_ver, "remote_version": remote_ver})
+        else:
+            all_status.append({"name": name, "status": "unknown", "installed_version": None, "remote_version": None})
+    return missing, outdated, all_status
 
 
 def cmd_plan(only=None, category=None):
-    missing, outdated = _compute(only=only, category=category)
-    if not missing and not outdated:
-        print("Nothing to do -- every haiggoh plugin is installed and current.")
-        return 0
+    missing, outdated, all_status = _compute(only=only, category=category)
+
+    # Always show full status - never silently return
     if missing:
         print("Would install:")
         for name in missing:
@@ -138,6 +157,31 @@ def cmd_plan(only=None, category=None):
         for item in outdated:
             print(f"  ^ {item['name']}  ({item['installed_version'] or '?'} -> "
                   f"{item['remote_version']})")
+
+    # List current plugins with version
+    current_plugins = [s for s in all_status if s["status"] == "current"]
+    if current_plugins:
+        print("Current:")
+        for item in current_plugins:
+            ver = item['installed_version'] or '?'
+            print(f"  = {item['name']}  {ver} (current)")
+
+    # Show other statuses
+    missing_status = [s for s in all_status if s["status"] == "missing"]
+    if missing_status:
+        print("Missing (not installed):")
+        for item in missing_status:
+            print(f"  - {item['name']} (not installed)")
+
+    unknown_plugins = [s for s in all_status if s["status"] == "unknown"]
+    if unknown_plugins:
+        print("Unknown status:")
+        for item in unknown_plugins:
+            print(f"  ? {item['name']}")
+
+    if not missing and not outdated and not missing_status and not unknown_plugins:
+        print("All haiggoh plugins are current.")
+
     return 0
 
 
@@ -157,7 +201,7 @@ def cmd_apply(only=None, category=None, policy="skip"):
     Every line below therefore reports the version that is actually recorded afterwards, and a
     command that exited 0 without moving the version is reported NOT APPLIED and counted as a
     failure."""
-    missing, outdated = _compute(only=only, category=category)
+    missing, outdated, all_status = _compute(only=only, category=category)
     failed = []
     for name in missing:
         r = subprocess.run(["claude", "plugin", "install", f"{name}@haiggoh"], capture_output=True, text=True)
