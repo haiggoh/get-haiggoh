@@ -181,7 +181,8 @@ def test_cli_plan_reports_nothing_to_do(tmp_path):
     }
     r = _run_cli(["plan"], env)
     assert r.returncode == 0
-    assert "nothing to do" in r.stdout.lower()
+    # New output says "All haiggoh plugins are current." instead of "nothing to do"
+    assert "all haiggoh plugins are current" in r.stdout.lower()
 
 
 def _selection_env(tmp_path):
