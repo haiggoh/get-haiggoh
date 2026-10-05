@@ -170,9 +170,8 @@ def remote_is_newer(installed_version, remote_version):
     return right > left
 
 
-def compute_outdated(catalog_entries, installed, remote_versions, self_name):
-    """Installed entries whose PUBLISHED version is ahead of the installed version,
-    excluding self_name.
+def compute_outdated(catalog_entries, installed, remote_versions):
+    """Installed entries whose PUBLISHED version is ahead of the installed version.
 
     Compares versions, NOT commit shas. Measured 2026-08-30 on harness 2.1.246 across all 11
     haiggoh plugins: installed_plugins.json keeps `version` and `installPath` accurate in
@@ -189,7 +188,7 @@ def compute_outdated(catalog_entries, installed, remote_versions, self_name):
     out = []
     for e in catalog_entries:
         name = e["name"]
-        if name == self_name or name not in installed:
+        if name not in installed:
             continue
         remote_version = remote_versions.get(name)
         installed_version = installed[name].get("version")

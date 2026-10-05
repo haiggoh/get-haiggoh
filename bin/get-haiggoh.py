@@ -103,8 +103,9 @@ def _compute(only=None, category=None):
 
     # Parallel, bounded manifest sweep over installed catalog entries with a repo URL.
     # Same pattern as hooks/check-installed.py:_fetch_remote_versions
+    # INCLUDE SELF_NAME (get-haiggoh) so it can update itself
     targets = [(e["name"], c.entry_repo_url(e)) for e in catalog
-               if e.get("name") and e["name"] != SELF_NAME and e["name"] in installed
+               if e.get("name") and e["name"] in installed
                and c.entry_repo_url(e)]
     remote_versions = {}
     if targets:
@@ -117,7 +118,7 @@ def _compute(only=None, category=None):
             pass
 
     missing = c.compute_missing(catalog, installed, SELF_NAME)
-    outdated = c.compute_outdated(catalog, installed, remote_versions, SELF_NAME)
+    outdated = c.compute_outdated(catalog, installed, remote_versions)
     skip_list = c.load_skip_list()
     missing = c.filter_missing_by_skip(missing, skip_list)
     outdated = c.filter_outdated_by_skip(outdated, skip_list)
@@ -126,8 +127,7 @@ def _compute(only=None, category=None):
     all_status = []
     for entry in catalog:
         name = entry["name"]
-        if name == SELF_NAME:
-            continue
+        # INCLUDE SELF_NAME (get-haiggoh) so it shows its own status
         inst = installed.get(name)
         remote_ver = remote_versions.get(name)
         installed_ver = inst.get("version") if inst else None
