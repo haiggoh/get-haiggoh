@@ -2,6 +2,22 @@
 
 All notable changes to `get-haiggoh` are documented in this file.
 
+## [0.8.4] - 2026-10-05
+
+### Added
+- **cmd_plan** now shows all 13 haiggoh marketplace plugins with status:
+  - missing plugins (not installed)
+  - outdated plugins (version upgrade available)
+  - current plugins with version number and '(current)' marker
+  - unknown status plugins
+- **dryrun** alias for plan accepted
+- **cmd_apply** shows same full status before applying
+- **get-haiggoh plan** no longer silently returns 'Nothing to do' - always shows full status
+
+### Changed
+- get-haiggoh plan no longer silently returns 'Nothing to do' - always shows full status
+- cmd_apply shows same full status before applying
+
 ## [0.8.1] - 2026-10-04
 
 ### Fixed — Performance regression in `plan`/`apply`
