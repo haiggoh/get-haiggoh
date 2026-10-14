@@ -281,7 +281,7 @@ def test_cli_apply_reports_not_applied_when_the_version_does_not_move(
     installed_path = env["GET_HAIGGOH_INSTALLED_PLUGINS_FILE"]
     _write_json(installed_path, {"plugins": {"waypoints@haiggoh": [{"version": "0.5.1"}]}})
     mod = _load_cli(monkeypatch, env)
-    monkeypatch.setattr(mod, "_remote_plugin_version", lambda url: "0.6.0")
+    monkeypatch.setattr(mod, "_remote_plugin_version", lambda url: ("0.6.0", None))
     monkeypatch.setattr(mod.subprocess, "run", lambda cmd, **kw: _Ok())  # exits 0, changes nothing
 
     rc = mod.cmd_apply(only=["waypoints"])
@@ -296,7 +296,7 @@ def test_cli_apply_reports_ok_with_both_versions_when_the_update_lands(
     installed_path = env["GET_HAIGGOH_INSTALLED_PLUGINS_FILE"]
     _write_json(installed_path, {"plugins": {"waypoints@haiggoh": [{"version": "0.5.1"}]}})
     mod = _load_cli(monkeypatch, env)
-    monkeypatch.setattr(mod, "_remote_plugin_version", lambda url: "0.6.0")
+    monkeypatch.setattr(mod, "_remote_plugin_version", lambda url: ("0.6.0", None))
 
     def fake_run(cmd, **kwargs):
         _write_json(installed_path, {"plugins": {"waypoints@haiggoh": [{"version": "0.6.0"}]}})
@@ -316,6 +316,29 @@ def test_cli_plan_shows_the_version_pair_for_an_outdated_plugin(monkeypatch, cap
     monkeypatch.delenv("GET_HAIGGOH_SKIP_REMOTE_SHA_CHECK", raising=False)
     env = {k: v for k, v in env.items() if k != "GET_HAIGGOH_SKIP_REMOTE_SHA_CHECK"}
     mod = _load_cli(monkeypatch, env)
-    monkeypatch.setattr(mod, "_remote_plugin_version", lambda url: "0.6.0")
+    monkeypatch.setattr(mod, "_remote_plugin_version", lambda url: ("0.6.0", None))
     assert mod.cmd_plan(only=["waypoints"]) == 0
     assert "waypoints  (0.5.1 -> 0.6.0)" in capsys.readouterr().out
+
+
+def test_cli_plan_diagnoses_an_unreadable_manifest_loudly(monkeypatch, capsys, tmp_path):
+    """0.9.0: a manifest that cannot be verified must render the DIAGNOSIS loudly — the old
+    silent fallback read a conflict-marker manifest as 'current' and hid free-agents 0.33.0
+    for hours. The plan prints the fetched url, the problem, the meaning and the fix, and
+    never says 'All current' while a plugin's published version is unverifiable."""
+    env = _selection_env(tmp_path)
+    installed_path = env["GET_HAIGGOH_INSTALLED_PLUGINS_FILE"]
+    _write_json(installed_path, {"plugins": {"waypoints@haiggoh": [{"version": "0.5.1"}]}})
+    mod = _load_cli(monkeypatch, env)
+    monkeypatch.setattr(mod, "_remote_plugin_version", lambda url: (None, {
+        "url": "https://example/HEAD/.claude-plugin/plugin.json",
+        "problem": "manifest contains unresolved CONFLICT MARKERS",
+        "meaning": "version-keyed installers read garbage and fall back",
+        "fix": "resolve the manifest and move the tag"}))
+
+    assert mod.cmd_plan(only=["waypoints"]) == 0
+    out = capsys.readouterr().out
+    assert "CANNOT VERIFY THE PUBLISHED VERSION" in out
+    assert "CONFLICT MARKERS" in out and "move the tag" in out
+    assert "https://example/HEAD/.claude-plugin/plugin.json" in out
+    assert "All haiggoh plugins are current." not in out

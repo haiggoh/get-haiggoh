@@ -5,7 +5,6 @@ gate lives in the skill layer (SKILL.md), not here -- this CLI is non-interactiv
 Bash tool isn't a TTY), so `plan` then `apply` is how the model shows-then-does rather than
 this script prompting itself.
 """
-import json
 import os
 import subprocess
 import sys
@@ -27,20 +26,39 @@ def _skip_remote_check():
 
 
 def _remote_plugin_version(url):
-    """The published `version` from the repo's .claude-plugin/plugin.json at HEAD, or None on
-    any failure (which compute_outdated treats as 'unknown', never a false positive). One
-    network call per plugin -- the same cost as the `git ls-remote` this replaced."""
+    """(version, diagnostic): the published `version` from the repo's .claude-plugin/plugin.json
+    at HEAD, or a diagnostic dict naming what came back and how to fix it. The old silent
+    None-fallback read a broken manifest as 'current' and hid a shipped release for hours
+    (measured 2026-10-13/14) — the failure is now rendered loudly by cmd_plan. One network
+    call per plugin -- the same cost as the `git ls-remote` this replaced."""
     if _skip_remote_check():
-        return None
+        return None, None
     manifest_url = c.plugin_manifest_url(url)
     if not manifest_url:
-        return None
+        return None, None
     try:
         with urllib.request.urlopen(manifest_url, timeout=REMOTE_TIMEOUT_S) as response:
-            version = json.loads(response.read().decode("utf-8")).get("version")
-        return version if isinstance(version, str) else None
+            body = response.read()
+    except Exception as exc:
+        return None, {"url": manifest_url,
+                      "problem": f"fetch failed: {exc}",
+                      "meaning": "the published manifest could not be downloaded",
+                      "fix": ("check connectivity; the manifest must exist at the default "
+                              "branch of the plugin repo")}
+    return c.diagnose_manifest(body, manifest_url)
+
+
+def _latest_tag(repo_url):
+    """(tag, version_tuple) of the highest v-semver tag on the repo, or (None, None)."""
+    if _skip_remote_check() or not repo_url:
+        return None, None
+    try:
+        out = subprocess.run(["git", "ls-remote", "--tags", repo_url], capture_output=True,
+                             text=True, timeout=REMOTE_TIMEOUT_S).stdout
     except Exception:
-        return None
+        return None, None
+    tag = c.parse_latest_tag(out)
+    return (tag, c.tag_version_tuple(tag)) if tag else (None, None)
 
 
 SANDBOX_HINT = (
@@ -108,12 +126,17 @@ def _compute(only=None, category=None):
                if e.get("name") and e["name"] in installed
                and c.entry_repo_url(e)]
     remote_versions = {}
+    diagnostics = {}
+    repo_urls = dict(targets)
     if targets:
         try:
             from concurrent.futures import ThreadPoolExecutor
             with ThreadPoolExecutor(max_workers=min(8, len(targets))) as ex:
-                for name, version in ex.map(lambda t: (t[0], _remote_plugin_version(t[1])), targets):
+                for name, (version, diagnostic) in ex.map(
+                        lambda t: (t[0], _remote_plugin_version(t[1])), targets):
                     remote_versions[name] = version
+                    if diagnostic:
+                        diagnostics[name] = diagnostic
         except Exception:
             pass
 
@@ -133,19 +156,60 @@ def _compute(only=None, category=None):
         installed_ver = inst.get("version") if inst else None
 
         if name in missing:
-            all_status.append({"name": name, "status": "missing", "installed_version": None, "remote_version": None})
+            all_status.append({"name": name, "status": "missing", "installed_version": None, "remote_version": None,
+                               "diagnostic": diagnostics.get(name)})
         elif any(o["name"] == name for o in outdated):
             out = next(o for o in outdated if o["name"] == name)
-            all_status.append({"name": name, "status": "outdated", "installed_version": out["installed_version"], "remote_version": out["remote_version"]})
+            all_status.append({"name": name, "status": "outdated", "installed_version": out["installed_version"], "remote_version": out["remote_version"],
+                               "diagnostic": diagnostics.get(name)})
         elif inst:
-            all_status.append({"name": name, "status": "current", "installed_version": installed_ver, "remote_version": remote_ver})
+            diagnostic = diagnostics.get(name)
+            # The deterministic tag check: when the HEAD manifest agrees with the installed
+            # version but the repo's highest tag announces MORE, the tagged commit's manifest
+            # was not bumped (or the tag points at the wrong commit) — exactly the shape that
+            # hid free-agents 0.33.0. (0.9.0)
+            if (remote_ver and installed_ver and remote_ver == installed_ver
+                    and not _skip_remote_check()):
+                tag, tag_tuple = _latest_tag(repo_urls.get(name))
+                inst_tuple = c.tag_version_tuple(installed_ver)
+                if tag and tag_tuple and inst_tuple and tag_tuple > inst_tuple:
+                    diagnostic = {"url": repo_urls.get(name),
+                                  "problem": (f"the latest tag {tag} announces a NEWER version than "
+                                              f"the HEAD manifest publishes ({installed_ver})"),
+                                  "meaning": ("the tagged commit's manifest was not bumped, or the "
+                                              "tag points at the wrong commit — version-keyed "
+                                              "installers compare the HEAD manifest and will never "
+                                              "see the tagged version"),
+                                  "fix": (f"align the version surfaces on the default branch "
+                                          f"(plugin.json must say {tag[1:]}) and move the tag onto "
+                                          "the corrected commit, saying plainly that it moved")}
+            all_status.append({"name": name, "status": "current", "installed_version": installed_ver, "remote_version": remote_ver,
+                               "diagnostic": diagnostic})
+        elif name == SELF_NAME:
+            # Self plugin (get-haiggoh) is not installed but not "missing" — treat as current
+            # since it's the tool itself managing the marketplace
+            all_status.append({"name": name, "status": "current", "installed_version": "self", "remote_version": remote_ver,
+                               "diagnostic": diagnostics.get(name)})
         else:
-            all_status.append({"name": name, "status": "unknown", "installed_version": None, "remote_version": None})
+            all_status.append({"name": name, "status": "unknown", "installed_version": None, "remote_version": None,
+                               "diagnostic": None})
     return missing, outdated, all_status
 
 
 def cmd_plan(only=None, category=None):
     missing, outdated, all_status = _compute(only=only, category=category)
+
+    # DIAGNOSE LOUDLY (0.9.0): a plugin whose published manifest cannot be verified is the
+    # silent-miss shape that hid free-agents 0.33.0 for hours — render the diagnosis before
+    # anything that could read as "all fine".
+    flagged = [s for s in all_status if s.get("diagnostic")]
+    for item in flagged:
+        d = item["diagnostic"]
+        print(f"⚠ {item['name']}: CANNOT VERIFY THE PUBLISHED VERSION")
+        print(f"    fetched: {d['url']}")
+        print(f"    problem: {d['problem']}")
+        print(f"    meaning: {d['meaning']}")
+        print(f"    fix:     {d['fix']}")
 
     # Always show full status - never silently return
     if missing:
@@ -179,7 +243,7 @@ def cmd_plan(only=None, category=None):
         for item in unknown_plugins:
             print(f"  ? {item['name']}")
 
-    if not missing and not outdated and not missing_status and not unknown_plugins:
+    if not missing and not outdated and not missing_status and not unknown_plugins and not flagged:
         print("All haiggoh plugins are current.")
 
     return 0

@@ -170,7 +170,7 @@ def remote_is_newer(installed_version, remote_version):
     return right > left
 
 
-def compute_outdated(catalog_entries, installed, remote_versions):
+def compute_outdated(catalog_entries, installed, remote_versions, self_name=None):
     """Installed entries whose PUBLISHED version is ahead of the installed version.
 
     Compares versions, NOT commit shas. Measured 2026-08-30 on harness 2.1.246 across all 11
@@ -189,6 +189,8 @@ def compute_outdated(catalog_entries, installed, remote_versions):
     for e in catalog_entries:
         name = e["name"]
         if name not in installed:
+            continue
+        if self_name and name == self_name:
             continue
         remote_version = remote_versions.get(name)
         installed_version = installed[name].get("version")
@@ -291,3 +293,64 @@ def format_nudge(missing, outdated):
         lines.append(f"  ^ {item['name']} {item['installed_version']} -> "
                      f"{item['remote_version']} (update available)")
     return "\n".join(lines)
+
+
+# --- 0.9.0: a broken published manifest is DIAGNOSED, never silently 'current' --------------
+
+def diagnose_manifest(body, url):
+    """Classify a fetched HEAD manifest. Returns (version, diagnostic): the published
+    version string on success (diagnostic None); on any failure version is None and
+    diagnostic is a {url, problem, meaning, fix} dict the caller renders LOUDLY.
+    Measured 2026-10-13/14: a conflict-marker manifest merged to the default branch made
+    every installer read garbage and fall back to the old version — the update was
+    invisible for hours. The old behaviour treated any failure as a silent None; silence
+    was the bug."""
+    if body is None:
+        return None, None
+    text = body.decode("utf-8", errors="replace") if isinstance(body, bytes) else body
+    if "<<<<<<<" in text or ">>>>>>>" in text:
+        return None, {"url": url,
+                      "problem": "manifest contains unresolved CONFLICT MARKERS",
+                      "meaning": ("an unresolved merge was published to the default branch; "
+                                  "version-keyed installers read garbage here and fall back to "
+                                  "the old version, so the update is invisible"),
+                      "fix": ("resolve .claude-plugin/plugin.json on the default branch (align "
+                              "every version surface), commit and push; if a tag announces the "
+                              "new version, move the tag onto the corrected commit (delete and "
+                              "re-push it) and say plainly that it moved")}
+    try:
+        data = json.loads(text)
+    except ValueError:
+        return None, {"url": url,
+                      "problem": "manifest is not valid JSON",
+                      "meaning": "the default branch's manifest cannot be parsed",
+                      "fix": "fix .claude-plugin/plugin.json on the default branch and push"}
+    version = data.get("version") if isinstance(data, dict) else None
+    if not isinstance(version, str) or not version:
+        return None, {"url": url,
+                      "problem": "manifest has no usable version key",
+                      "meaning": "the version the installer compares against is missing",
+                      "fix": ("add the version to .claude-plugin/plugin.json on the default "
+                              "branch and push")}
+    return version, None
+
+
+def tag_version_tuple(tag):
+    """(major, minor, patch) from a v-prefixed tag, suffixes ignored; None if not v-semver."""
+    m = re.match(r"^v(\d+)\.(\d+)\.(\d+)", tag or "")
+    return tuple(int(g) for g in m.groups()) if m else None
+
+
+def parse_latest_tag(ls_remote_output):
+    """Highest v-prefixed semver tag from `git ls-remote --tags` output; '^{}' peel lines
+    are ignored; None when no v-tag exists."""
+    best, best_key = None, None
+    for line in (ls_remote_output or "").splitlines():
+        ref = line.strip().split("\t")[-1] if "\t" in line else line.strip()
+        if not ref.startswith("refs/tags/") or ref.endswith("^{}"):
+            continue
+        tag = ref[len("refs/tags/"):]
+        key = tag_version_tuple(tag)
+        if key is not None and (best_key is None or key > best_key):
+            best, best_key = tag, key
+    return best

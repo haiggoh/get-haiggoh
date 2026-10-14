@@ -2,6 +2,27 @@
 
 All notable changes to `get-haiggoh` are documented in this file.
 
+## [0.9.0] - 2026-10-14
+
+### Added — a broken published manifest is DIAGNOSED, never silently 'current'
+
+`plan` now renders a loud `⚠ <plugin>: CANNOT VERIFY THE PUBLISHED VERSION` block (fetched
+url, problem, meaning, fix) whenever a plugin's HEAD manifest cannot be verified, and never
+prints "All haiggoh plugins are current" while any plugin's published version is
+unverifiable. Measured 2026-10-13/14: free-agents 0.33.0 was merged with a conflict-marker
+manifest, the HEAD version fetch returned garbage, and the old silent fallback reported the
+plugin 'current' — the update was hidden for hours.
+
+- `diagnose_manifest` classifies the fetch: unresolved CONFLICT MARKERS, invalid JSON, a
+  missing version key, or a fetch failure — each with deterministic fix instructions
+  (align the version surfaces on the default branch; move the tag onto the corrected commit).
+- New deterministic tag check: when the HEAD manifest agrees with the installed version but
+  the repo's highest tag announces MORE, plan reports the mismatch ("the latest tag vX
+  announces a newer version than the HEAD manifest publishes") — the tagged commit's
+  manifest was not bumped, or the tag points at the wrong commit.
+- `_remote_plugin_version` now returns `(version, diagnostic)`; the silent None-fallback
+  that made failures read as 'current' is gone.
+
 ## [0.8.8] - 2026-10-05
 
 ### Added

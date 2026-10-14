@@ -400,3 +400,53 @@ def test_a_pushed_but_unmerged_change_is_correctly_invisible():
     remote_from_default_branch = {"waypoints": "0.9.0"}
     assert c.compute_outdated(catalog, installed, remote_from_default_branch,
                               "get-haiggoh") == []
+
+
+# --- 0.9.0: a broken manifest is DIAGNOSED, never silently 'current' ------------------------
+# Measured 2026-10-13/14: free-agents 0.33.0 was merged with a conflict-marker manifest, so
+# the HEAD version fetch returned garbage and get-haiggoh reported the plugin 'current' —
+# the update was invisible for hours. The fetch now classifies the failure and plan renders
+# the diagnosis loudly instead of falling silent.
+
+def test_diagnose_manifest_conflict_markers():
+    body = ('{\n  "name": "x",\n<<<<<<< HEAD\n  "version": "0.32.3",\n'
+            '=======\n  "version": "0.33.0",\n>>>>>>> abc\n}')
+    version, diag = c.diagnose_manifest(body, "https://example/HEAD/.claude-plugin/plugin.json")
+    assert version is None
+    assert "CONFLICT MARKERS" in diag["problem"]
+    assert diag["url"].endswith(".claude-plugin/plugin.json")
+    assert "default branch" in diag["fix"]
+    assert "move the tag" in diag["fix"]
+
+
+def test_diagnose_manifest_invalid_json():
+    version, diag = c.diagnose_manifest("<html>502 Bad Gateway</html>", "u")
+    assert version is None
+    assert "not valid JSON" in diag["problem"]
+
+
+def test_diagnose_manifest_missing_version_key():
+    version, diag = c.diagnose_manifest('{"name": "x"}', "u")
+    assert version is None
+    assert "no usable version" in diag["problem"]
+
+
+def test_diagnose_manifest_ok_returns_version_and_no_diagnostic():
+    version, diag = c.diagnose_manifest('{"version": "0.33.0"}', "u")
+    assert version == "0.33.0"
+    assert diag is None
+
+
+def test_parse_latest_tag_picks_highest_and_ignores_peel_lines():
+    out = "refs/tags/v0.32.1\nrefs/tags/v0.33.0\nrefs/tags/v0.9.0\nrefs/tags/v0.33.0^{}\n"
+    assert c.parse_latest_tag(out) == "v0.33.0"
+
+
+def test_parse_latest_tag_no_tags_returns_none():
+    assert c.parse_latest_tag("") is None
+
+
+def test_tag_version_tuple():
+    assert c.tag_version_tuple("v0.33.0") == (0, 33, 0)
+    assert c.tag_version_tuple("v0.33.0-rc1") == (0, 33, 0)
+    assert c.tag_version_tuple("release-2") is None
