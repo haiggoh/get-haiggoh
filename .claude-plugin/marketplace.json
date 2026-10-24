@@ -109,6 +109,13 @@
       "description": "Claude Code deletes plans older than cleanupPeriodDays (30 days by default). Lasting Plans keeps every plan and playbook in visible, Git-versioned archives (~/Claude-plans, ~/Claude-playbooks) that the sweep cannot touch, records creation dates and Finder tags, and ships a watch-folder LaunchAgent plus a CLI to list, search, diff and restore.",
       "category": "productivity",
       "tags": ["plans", "playbooks", "backup", "git", "retention", "launchd"]
+    },
+    {
+      "name": "watch-your-step",
+      "source": { "source": "url", "url": "https://github.com/haiggoh/watch-your-step.git" },
+      "description": "🥾 Catches command traps BEFORE a tool call runs: a backtick or $40 inside double quotes, a mistyped home directory, a file truncated before it is read, zsh's '====' abort, bash-isms under zsh. Rules are data with tests; silent-corruption traps are blocked with the exact fix, the rest are warnings, and '# wys:allow <rule>' overrides one command visibly.",
+      "category": "productivity",
+      "tags": ["hook", "pretooluse", "shell", "zsh", "safety", "lint"]
     }
   ]
 }
