@@ -25,7 +25,6 @@ import json
 import os
 import subprocess
 import sys
-import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import get_haiggoh_core as c
@@ -48,41 +47,28 @@ def _refresh_marketplace():
         return False
 
 
-def _remote_plugin_version(url):
-    """The `version` published in the repo's .claude-plugin/plugin.json at HEAD, or None on
-    any failure/timeout (which compute_outdated treats as 'unknown', never a false positive)."""
-    if os.environ.get("GET_HAIGGOH_SKIP_REMOTE_VERSION_CHECK") \
-            or os.environ.get("GET_HAIGGOH_SKIP_REMOTE_SHA_CHECK"):
-        return None  # test-only escape hatch (both spellings honoured)
-    manifest_url = c.plugin_manifest_url(url)
-    if not manifest_url:
-        return None
-    try:
-        with urllib.request.urlopen(manifest_url, timeout=REFRESH_TIMEOUT_S) as response:
-            version = json.loads(response.read().decode("utf-8")).get("version")
-        return version if isinstance(version, str) else None
-    except Exception:
-        return None
-
-
 def _fetch_remote_versions(catalog, installed):
-    """Parallel, bounded manifest sweep over installed catalog entries with a repo URL.
-    Returns {plugin_name: version|None}. Paid at most once per day (gated by should_refresh in
-    main). Fail-safe: any error -> whatever partial result we have."""
+    """Parallel, bounded manifest sweep over installed catalog entries with a repo URL, through
+    the transport the CLI shares (core.fetch_url). Returns ({plugin_name: version|None},
+    [names whose check RAN and failed]). Paid at most once per day (gated by should_refresh in
+    main). A crash mid-sweep marks every target unverified rather than passing as complete."""
     targets = [(e["name"], c.entry_repo_url(e)) for e in catalog
                if e.get("name") and e["name"] != SELF_NAME and e["name"] in installed
                and c.entry_repo_url(e)]
-    versions = {}
+    versions, unverified = {}, []
     if not targets:
-        return versions
+        return versions, unverified
     try:
         from concurrent.futures import ThreadPoolExecutor
         with ThreadPoolExecutor(max_workers=min(8, len(targets))) as ex:
-            for name, version in ex.map(lambda t: (t[0], _remote_plugin_version(t[1])), targets):
+            for name, (version, diagnostic) in ex.map(
+                    lambda t: (t[0], c.remote_plugin_version(t[1], REFRESH_TIMEOUT_S)), targets):
                 versions[name] = version
+                if diagnostic:
+                    unverified.append(name)
     except Exception:
-        pass
-    return versions
+        return versions, [name for name, _ in targets]
+    return versions, unverified
 
 
 def _add_missing_shims(installed):
@@ -127,9 +113,11 @@ def _nudge_banner():
 
     # Option B: fetch remote versions at most once/day (on the refresh) and cache them
     # alongside the stamp; same-day boots reuse the cache so outdated nudges cost no network.
+    unverified = []
     if refreshing:
-        remote_versions = _fetch_remote_versions(catalog, installed)
-        c.save_refresh_state(stamp_path, today, remote_versions)  # date AND version cache
+        remote_versions, unverified = _fetch_remote_versions(catalog, installed)
+        # date AND version cache -- but only for a complete sweep; a blind one retries next boot
+        c.record_sweep(stamp_path, today, remote_versions, unverified)
     else:
         remote_versions = c.load_cached_versions(stamp_path)
 
@@ -138,7 +126,7 @@ def _nudge_banner():
     outdated = c.filter_outdated_by_skip(
         c.compute_outdated(catalog, installed, remote_versions, SELF_NAME), skip_list)
 
-    return c.format_nudge(missing, outdated)
+    return c.format_nudge(missing, outdated, unverified=unverified)
 
 
 def main():

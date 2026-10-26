@@ -336,8 +336,10 @@ def test_cli_plan_diagnoses_an_unreadable_manifest_loudly(monkeypatch, capsys, t
         "meaning": "version-keyed installers read garbage and fall back",
         "fix": "resolve the manifest and move the tag"}))
 
-    assert mod.cmd_plan(only=["waypoints"]) == 0
+    # 0.9.1: exit 1, not 0 — this assertion used to pin the bug (a blind plan exiting success)
+    assert mod.cmd_plan(only=["waypoints"]) == 1
     out = capsys.readouterr().out
+    assert "waypoints  0.5.1 (current)" not in out
     assert "CANNOT VERIFY THE PUBLISHED VERSION" in out
     assert "CONFLICT MARKERS" in out and "move the tag" in out
     assert "https://example/HEAD/.claude-plugin/plugin.json" in out

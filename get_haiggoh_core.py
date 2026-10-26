@@ -8,7 +8,10 @@ a corrupt/missing file must never crash a SessionStart hook.
 import json
 import os
 import re
+import shutil
+import subprocess
 import tempfile
+import urllib.request
 from datetime import date
 
 
@@ -279,19 +282,25 @@ def load_cached_versions(stamp_path):
     return cached if isinstance(cached, dict) else {}
 
 
-def format_nudge(missing, outdated):
+def format_nudge(missing, outdated, unverified=()):
     """Nudge banner text, or '' if there's nothing to report. Points at the get-haiggoh
     skill/plugin name so the user knows how to act on it, without executing anything
-    itself -- this hook only ever informs, never installs/updates on its own."""
-    if not missing and not outdated:
-        return ""
-    lines = ["get-haiggoh: new or updated haiggoh plugins available "
-             "(ask me to \"install all my haiggoh plugins\" to sync):"]
+    itself -- this hook only ever informs, never installs/updates on its own. `unverified`
+    names plugins whose published version could not be fetched: silence there would read as
+    'up to date', so they get one line of their own."""
+    lines = []
+    if missing or outdated:
+        lines.append("get-haiggoh: new or updated haiggoh plugins available "
+                     "(ask me to \"install all my haiggoh plugins\" to sync):")
     for name in missing:
         lines.append(f"  + {name} (not installed)")
     for item in outdated:
         lines.append(f"  ^ {item['name']} {item['installed_version']} -> "
                      f"{item['remote_version']} (update available)")
+    if unverified:
+        lines.append("get-haiggoh: could not verify the published version of "
+                     + ", ".join(sorted(unverified))
+                     + " (network/TLS) -- `get-haiggoh plan` shows the diagnosis")
     return "\n".join(lines)
 
 
@@ -354,3 +363,132 @@ def parse_latest_tag(ls_remote_output):
         if key is not None and (best_key is None or key > best_key):
             best, best_key = tag, key
     return best
+
+
+# --- 0.9.1: ONE transport for every network read, and it survives TLS interception -------
+#
+# Measured 2026-10-26 on a corporate network whose proxy re-signs HTTPS with a CA chain that
+# lacks the Authority Key Identifier: Python's OpenSSL rejects it (CERTIFICATE_VERIFY_FAILED)
+# while curl, which trusts the macOS keychain, fetches the same URL fine. Every manifest fetch
+# failed, so plan/apply/the hook could verify NOTHING. The CLI and the hook both go through
+# fetch_url, so a transport fix reaches every route at once.
+
+class FetchError(Exception):
+    """Both routes failed. `kind` is 'tls' (the certificate was rejected: interception, or a
+    trust-store problem) or 'network' (DNS, refused, timeout...)."""
+
+    def __init__(self, message, kind="network"):
+        super().__init__(message)
+        self.kind = kind
+
+
+_truststore_tried = False
+
+
+def _inject_truststore():
+    """Use the OS trust store when the optional `truststore` package is importable. Not a
+    dependency: the curl fallback below covers the same networks without it."""
+    global _truststore_tried
+    if _truststore_tried or os.environ.get("GET_HAIGGOH_NO_TRUSTSTORE"):
+        return
+    _truststore_tried = True
+    try:
+        import truststore
+        truststore.inject_into_ssl()
+    except Exception:
+        pass
+
+
+def _curl_path():
+    """System curl, or $GET_HAIGGOH_CURL. A SET override that is not an executable aborts with
+    its name rather than silently falling back to the default."""
+    override = os.environ.get("GET_HAIGGOH_CURL")
+    if override:
+        if not (os.path.isfile(override) and os.access(override, os.X_OK)):
+            raise FetchError(f"GET_HAIGGOH_CURL={override!r} is not an executable file")
+        return override
+    return shutil.which("curl")
+
+
+def _is_tls_error(text):
+    return "CERTIFICATE_VERIFY_FAILED" in text or "SSL" in text or "certificate" in text.lower()
+
+
+def fetch_url(url, timeout):
+    """The body at `url` as bytes. urllib first; on ANY urllib failure, system curl (OS trust
+    store, and it falls back to IPv4 where IPv6 is black-holed). Raises FetchError naming both
+    attempts when neither works -- never returns None."""
+    _inject_truststore()
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as response:
+            return response.read()
+    except Exception as exc:
+        first = f"urllib: {exc}"
+    curl = _curl_path()
+    if not curl:
+        raise FetchError(f"{first}; curl: not found on PATH",
+                         kind="tls" if _is_tls_error(first) else "network")
+    try:
+        r = subprocess.run([curl, "-fsSL", "--max-time", str(int(max(1, timeout))), url],
+                           capture_output=True, timeout=timeout + 2)
+    except Exception as exc:
+        raise FetchError(f"{first}; curl: {exc}", kind="network") from exc
+    if r.returncode == 0:
+        return r.stdout
+    second = f"curl (exit {r.returncode}): {r.stderr.decode('utf-8', 'replace').strip()}"
+    # curl exit 35/51/58/60 are TLS failures; urllib's text says the same thing its own way
+    tls = _is_tls_error(first) or r.returncode in (35, 51, 58, 60)
+    raise FetchError(f"{first}; {second}", kind="tls" if tls else "network")
+
+
+def fetch_diagnostic(url, err):
+    """The {url, problem, meaning, fix} block for a manifest that could not be downloaded."""
+    if getattr(err, "kind", "network") == "tls":
+        return {"url": url,
+                "problem": f"TLS certificate rejected: {err}",
+                "meaning": ("the published manifest could not be downloaded -- usually a network "
+                            "that intercepts HTTPS (corporate proxy). The installed version is "
+                            "UNVERIFIED, not current"),
+                "fix": (f"check by hand: curl -fsSL {url} | grep version ; to refresh anyway: "
+                        "claude plugin marketplace update haiggoh && claude plugin update "
+                        "<name>@haiggoh")}
+    return {"url": url,
+            "problem": f"fetch failed: {err}",
+            "meaning": ("the published manifest could not be downloaded; the installed version "
+                        "is UNVERIFIED, not current"),
+            "fix": (f"check connectivity, then: curl -fsSL {url} ; the manifest must exist at "
+                    "the default branch of the plugin repo")}
+
+
+def skip_remote_check():
+    """Test-only escape hatch. `GET_HAIGGOH_SKIP_REMOTE_VERSION_CHECK` is the current name;
+    the older `..._SHA_CHECK` spelling is still honoured."""
+    return bool(os.environ.get("GET_HAIGGOH_SKIP_REMOTE_VERSION_CHECK")
+                or os.environ.get("GET_HAIGGOH_SKIP_REMOTE_SHA_CHECK"))
+
+
+def remote_plugin_version(git_url, timeout):
+    """(version, diagnostic) for the repo's HEAD manifest -- shared by the CLI and the hook.
+    (None, None) means 'not checkable' (skipped, or not a GitHub URL); (None, diagnostic)
+    means the check RAN and failed, which callers must surface, never treat as current."""
+    if skip_remote_check():
+        return None, None
+    manifest_url = plugin_manifest_url(git_url)
+    if not manifest_url:
+        return None, None
+    try:
+        body = fetch_url(manifest_url, timeout)
+    except FetchError as err:
+        return None, fetch_diagnostic(manifest_url, err)
+    return diagnose_manifest(body, manifest_url)
+
+
+def record_sweep(stamp_path, today_str, remote_versions, unverified):
+    """Stamp today's refresh and cache its versions ONLY when every plugin was verified.
+    Returns True if stamped. An incomplete sweep is retried next session instead of freezing
+    a blind day into the cache (measured 2026-10-26: one failed morning sweep silenced the
+    update nudge until midnight)."""
+    if unverified:
+        return False
+    save_refresh_state(stamp_path, today_str, remote_versions)
+    return True

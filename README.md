@@ -86,6 +86,16 @@ The SessionStart hook also adds missing shortcuts, but only ones that collide wi
 Environment: `GET_HAIGGOH_NO_SHIMS=1` disables shortcut creation; `GET_HAIGGOH_SHIM_DIR` and
 `GET_HAIGGOH_SHIM_BACKUP_DIR` move the two directories (`get-haiggoh --help` lists all).
 
+## Verifying versions on restrictive networks
+
+`plan`, `apply` and the SessionStart hook compare each installed plugin against the version its
+repo publishes at HEAD. Some networks (corporate proxies) re-sign HTTPS in a way Python's TLS
+rejects while `curl` accepts it, so every fetch tries Python first and then the system `curl`;
+the optional `truststore` package is used too when it is installed. When a version still cannot
+be fetched, the plugin is listed as **`(unverified)`** with a `⚠ CANNOT VERIFY` diagnosis, never
+as `(current)`, and `plan`/`apply` exit **1**. The hook names such plugins in its banner and
+retries next session instead of caching a blind day.
+
 ## What it pulls: the default branch, on purpose
 
 `get-haiggoh` resolves every plugin from its repository's **default branch**, and its

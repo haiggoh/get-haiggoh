@@ -2,6 +2,34 @@
 
 All notable changes to `get-haiggoh` are documented in this file.
 
+## [0.9.1] - 2026-10-26
+
+### Fixed — the version check no longer goes blind behind a TLS-intercepting proxy, and blindness is never reported as 'current'
+
+Measured 2026-10-26 on a corporate network whose proxy re-signs HTTPS with a CA chain lacking
+the Authority Key Identifier: Python rejected every manifest fetch (`CERTIFICATE_VERIFY_FAILED`)
+while `curl` fetched the same URLs fine. Three releases that day (free-agents 0.46.1,
+cost-tracker 0.20.1 and 0.20.2) were reported "(current)" at the OLD version, and rtc-ship's
+refresh step ended red on a correct release.
+
+- **One transport, two routes.** New `fetch_url` in core: urllib first (with the optional
+  `truststore` package injected when importable), then system `curl`, which trusts the OS
+  keychain and falls back to IPv4 where IPv6 is black-holed. The CLI and the SessionStart hook
+  both use it — the hook had its own private `urlopen`, so a CLI-only fix would have left it
+  blind. A test now fails if either grows a private network call again.
+- **`(unverified)` is its own status.** `plan` used to print the ⚠ diagnosis and then list the
+  same plugin under "Current" and exit 0; it now lists it as `? name X (unverified)` and exits 1.
+- **`apply` shows the diagnosis too.** It had a separate copy of the status printout that never
+  rendered diagnostics and could say "All haiggoh plugins are current." while a plugin was
+  unverifiable; plan and apply now share one renderer, and an unverifiable plugin fails apply.
+- **The hook no longer caches a blind day.** A sweep with any failed fetch is not stamped (it
+  retries next session) and the banner names the plugins it could not verify; before, one
+  failed morning sweep silenced update nudges until midnight.
+- **Diagnoses name the cause.** A TLS rejection says so and gives the `curl` check and the
+  `claude plugin update` workaround instead of "check connectivity".
+- New env: `GET_HAIGGOH_CURL` (a set-but-invalid path is reported by name, never ignored),
+  `GET_HAIGGOH_NO_TRUSTSTORE`; `--help` now documents exit statuses.
+
 ## [0.9.0] - 2026-10-14
 
 ### Added — a broken published manifest is DIAGNOSED, never silently 'current'

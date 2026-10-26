@@ -8,7 +8,6 @@ this script prompting itself.
 import os
 import subprocess
 import sys
-import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import get_haiggoh_core as c
@@ -16,36 +15,14 @@ import get_haiggoh_core as c
 SELF_NAME = os.environ.get("GET_HAIGGOH_SELF_NAME") or "get-haiggoh"
 REMOTE_TIMEOUT_S = float(os.environ.get("GET_HAIGGOH_REFRESH_TIMEOUT_S") or 5)
 
-
-def _skip_remote_check():
-    """Test-only escape hatch. `GET_HAIGGOH_SKIP_REMOTE_VERSION_CHECK` is the current name;
-    the older `..._SHA_CHECK` spelling is still honoured so an existing test or wrapper that
-    sets it keeps suppressing the network call instead of silently starting to make one."""
-    return bool(os.environ.get("GET_HAIGGOH_SKIP_REMOTE_VERSION_CHECK")
-                or os.environ.get("GET_HAIGGOH_SKIP_REMOTE_SHA_CHECK"))
+_skip_remote_check = c.skip_remote_check
 
 
 def _remote_plugin_version(url):
-    """(version, diagnostic): the published `version` from the repo's .claude-plugin/plugin.json
-    at HEAD, or a diagnostic dict naming what came back and how to fix it. The old silent
-    None-fallback read a broken manifest as 'current' and hid a shipped release for hours
-    (measured 2026-10-13/14) — the failure is now rendered loudly by cmd_plan. One network
-    call per plugin -- the same cost as the `git ls-remote` this replaced."""
-    if _skip_remote_check():
-        return None, None
-    manifest_url = c.plugin_manifest_url(url)
-    if not manifest_url:
-        return None, None
-    try:
-        with urllib.request.urlopen(manifest_url, timeout=REMOTE_TIMEOUT_S) as response:
-            body = response.read()
-    except Exception as exc:
-        return None, {"url": manifest_url,
-                      "problem": f"fetch failed: {exc}",
-                      "meaning": "the published manifest could not be downloaded",
-                      "fix": ("check connectivity; the manifest must exist at the default "
-                              "branch of the plugin repo")}
-    return c.diagnose_manifest(body, manifest_url)
+    """(version, diagnostic) for the repo's HEAD manifest, via the transport the hook shares
+    (core.fetch_url: urllib, then curl). A failure comes back as a diagnostic that plan and
+    apply render LOUDLY -- never as a silent None that reads as 'current'."""
+    return c.remote_plugin_version(url, REMOTE_TIMEOUT_S)
 
 
 def _latest_tag(repo_url):
@@ -183,22 +160,27 @@ def _compute(only=None, category=None):
                                   "fix": (f"align the version surfaces on the default branch "
                                           f"(plugin.json must say {tag[1:]}) and move the tag onto "
                                           "the corrected commit, saying plainly that it moved")}
-            all_status.append({"name": name, "status": "current", "installed_version": installed_ver, "remote_version": remote_ver,
+            # A plugin whose published version could not be checked is UNVERIFIED, never
+            # "current": rendering it as current is the silent-miss shape (0.9.1).
+            all_status.append({"name": name, "status": "unverified" if diagnostic else "current",
+                               "installed_version": installed_ver, "remote_version": remote_ver,
                                "diagnostic": diagnostic})
         elif name == SELF_NAME:
             # Self plugin (get-haiggoh) is not installed but not "missing" — treat as current
             # since it's the tool itself managing the marketplace
-            all_status.append({"name": name, "status": "current", "installed_version": "self", "remote_version": remote_ver,
-                               "diagnostic": diagnostics.get(name)})
+            diagnostic = diagnostics.get(name)
+            all_status.append({"name": name, "status": "unverified" if diagnostic else "current",
+                               "installed_version": "self", "remote_version": remote_ver,
+                               "diagnostic": diagnostic})
         else:
             all_status.append({"name": name, "status": "unknown", "installed_version": None, "remote_version": None,
                                "diagnostic": None})
     return missing, outdated, all_status
 
 
-def cmd_plan(only=None, category=None):
-    missing, outdated, all_status = _compute(only=only, category=category)
-
+def _render_status(missing, outdated, all_status):
+    """Print the full status, shared by plan and apply so neither can drift back to silence.
+    Returns the list of flagged (unverifiable) entries; callers exit non-zero on any."""
     # DIAGNOSE LOUDLY (0.9.0): a plugin whose published manifest cannot be verified is the
     # silent-miss shape that hid free-agents 0.33.0 for hours — render the diagnosis before
     # anything that could read as "all fine".
@@ -230,6 +212,12 @@ def cmd_plan(only=None, category=None):
             ver = item['installed_version'] or '?'
             print(f"  = {item['name']}  {ver} (current)")
 
+    unverified = [s for s in all_status if s["status"] == "unverified"]
+    if unverified:
+        print("Unverified (published version could not be checked — see ⚠ above):")
+        for item in unverified:
+            print(f"  ? {item['name']}  {item['installed_version'] or '?'} (unverified)")
+
     # Show other statuses
     missing_status = [s for s in all_status if s["status"] == "missing"]
     if missing_status:
@@ -246,7 +234,14 @@ def cmd_plan(only=None, category=None):
     if not missing and not outdated and not missing_status and not unknown_plugins and not flagged:
         print("All haiggoh plugins are current.")
 
-    return 0
+    return flagged
+
+
+def cmd_plan(only=None, category=None):
+    """Exit 0 only when every plugin's state is known; 1 when any published version could not
+    be verified, so a script (rtc-ship's refresh, a CI check) cannot read blindness as success."""
+    missing, outdated, all_status = _compute(only=only, category=category)
+    return 1 if _render_status(missing, outdated, all_status) else 0
 
 
 def _installed_now():
@@ -267,44 +262,13 @@ def cmd_apply(only=None, category=None, policy="skip"):
     failure."""
     missing, outdated, all_status = _compute(only=only, category=category)
 
-    # First, show the full plan status (same as cmd_plan)
-    if missing:
-        print("Would install:")
-        for name in missing:
-            print(f"  + {name}")
-    if outdated:
-        print("Would update:")
-        for item in outdated:
-            print(f"  ^ {item['name']}  ({item['installed_version'] or '?'} -> "
-                  f"{item['remote_version']})")
-
-    # List current plugins with version
-    current_plugins = [s for s in all_status if s["status"] == "current"]
-    if current_plugins:
-        print("Current:")
-        for item in current_plugins:
-            ver = item['installed_version'] or '?'
-            print(f"  = {item['name']}  {ver} (current)")
-
-    # Show other statuses
-    missing_status = [s for s in all_status if s["status"] == "missing"]
-    if missing_status:
-        print("Missing (not installed):")
-        for item in missing_status:
-            print(f"  - {item['name']} (not installed)")
-
-    unknown_plugins = [s for s in all_status if s["status"] == "unknown"]
-    if unknown_plugins:
-        print("Unknown status:")
-        for item in unknown_plugins:
-            print(f"  ? {item['name']}")
-
-    if not missing and not outdated and not missing_status and not unknown_plugins:
-        print("All haiggoh plugins are current.")
+    # Same renderer as plan: before 0.9.1 apply had its own copy that never printed the
+    # diagnostics, so an unverifiable plugin showed only as '(current)'.
+    flagged = _render_status(missing, outdated, all_status)
 
     print()  # blank line before apply actions
 
-    failed = []
+    failed = [item["name"] for item in flagged]
     for name in missing:
         r = subprocess.run(["claude", "plugin", "install", f"{name}@haiggoh"], capture_output=True, text=True)
         if r.returncode != 0:
@@ -438,6 +402,15 @@ def print_help():
     print("                                 (default ~/.local/state/get-haiggoh/shim-backups)")
     print("  GET_HAIGGOH_INSTALLED_PLUGINS_FILE, GET_HAIGGOH_CACHE_DIR")
     print("                                 override what the shortcuts resolve against")
+    print("  GET_HAIGGOH_CURL               curl used when Python's HTTPS fails (default: curl")
+    print("                                 on PATH; a set-but-invalid path is reported, not ignored)")
+    print("  GET_HAIGGOH_NO_TRUSTSTORE=1    do not use the optional `truststore` package")
+    print("  GET_HAIGGOH_REFRESH_TIMEOUT_S  per-plugin network timeout in seconds (default 5)")
+    print()
+    print("Exit status:")
+    print("  0  everything known (and, for apply, every change landed)")
+    print("  1  a plugin's published version could NOT be verified, or an apply step failed")
+    print("  2  usage error")
     print()
     print("Examples:")
     print("  get-haiggoh upgrade")
