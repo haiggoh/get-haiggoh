@@ -22,8 +22,12 @@ def run_get_haiggoh(args):
         return 1
 
 def print_menu():
-    """Print the main menu."""
-    print("\n=== 👨🏻‍💻 get-haiggoh Menu ===")
+    """Print the main menu — branded title (emoji + name) with a subtitle, csl-style."""
+    print()
+    print("👨🏻‍💻 get-haiggoh")
+    print("   Install and keep every haiggoh plugin up to date — one place for the whole fleet")
+    print("=" * 72)
+    print()
     print("Choose an action:")
     print("  1) Plan all plugins (dry run)")
     print("  2) Apply all plugins (install/update) [DEFAULT]")
@@ -43,7 +47,7 @@ def get_plugin_selection():
 
 def print_help():
     """Print help message for get-haiggoh-menu."""
-    print("get-haiggoh-menu - Menu-driven interface for get-haiggoh")
+    print("👨🏻‍💻 get-haiggoh-menu - Menu-driven interface for get-haiggoh")
     print("")
     print("Usage:")
     print("  get-haiggoh-menu")

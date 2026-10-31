@@ -9,9 +9,12 @@ All notable changes to `get-haiggoh` are documented in this file.
 - Update/shortcut notices now lead with the About mark: the SessionStart nudge
   (`format_nudge`: "new or updated…" and "could not verify…" lines), the shim note
   ("added PATH shortcuts: …"), the `get-haiggoh.py --help` banner, and the menu banner
-  (`=== 👨🏻‍💻 get-haiggoh Menu ===`). Usage-error lines (e.g. "menu needs a terminal")
-  stay unbranded — not credit moments. The menu draws `===` rules, not a `│` box, so the
-  ZWJ mark needs no width correction (verified by eyeball, R4).
+  the `get-haiggoh.py --help` banner, and the menu banner. Usage-error lines (e.g. "menu
+  needs a terminal") stay unbranded — not credit moments.
+- User amendment 2026-10-31: interactive menus restyle to a branded title + subtitle
+  (csl-style): the menu now prints `👨🏻‍💻 get-haiggoh` / tagline / fixed-width `=` rule.
+  The rule is fixed-width, so the ZWJ mark needs no width correction (verified by
+  live-fire eyeball, R4).
 - plugin.json description and README h1 carry 👨🏻‍💻; SKILL.md gained the standard
   `## Branding (👨🏻‍💻)` section.
 - New `docs/branding.md`: the credit-moment rule, the marks table, the three carriers,

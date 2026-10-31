@@ -40,11 +40,17 @@ class CliBrandingTests(unittest.TestCase):
         line = next(ln for ln in r.stdout.splitlines() if "get-haiggoh CLI" in ln)
         self.assertTrue(line.startswith(f"{MARK} get-haiggoh CLI"), line)
 
-    def test_menu_banner_leads_with_mark(self):
-        # the menu draws === rules, not a │ box, so the ZWJ mark needs no width correction
+    def test_menu_banner_is_title_plus_subtitle(self):
+        # user amendment 2026-10-31: interactive menus restyle to a branded title
+        # (emoji + name) with a subtitle, csl-style; the === rule is fixed-width so
+        # the ZWJ mark needs no width correction
         r = subprocess.run([sys.executable, str(ROOT / "bin" / "get-haiggoh-menu")],
                            input="5\n", capture_output=True, text=True, timeout=15)
-        self.assertIn(f"=== {MARK} get-haiggoh Menu ===", r.stdout)
+        lines = [ln for ln in r.stdout.splitlines() if ln.strip()]
+        self.assertEqual(lines[0], f"{MARK} get-haiggoh")
+        self.assertTrue(lines[1].strip().startswith("Install and keep every haiggoh plugin"),
+                        lines[1])
+        self.assertTrue(lines[2] and set(lines[2]) == {"="}, lines[2])
 
 
 if __name__ == "__main__":
