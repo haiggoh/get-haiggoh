@@ -2,6 +2,26 @@
 
 All notable changes to `get-haiggoh` are documented in this file.
 
+## [0.9.2] - 2026-10-31
+
+### Changed — credit-moment marks 👨🏻‍💻 (emoji branding rollout, Task 14)
+
+- Update/shortcut notices now lead with the About mark: the SessionStart nudge
+  (`format_nudge`: "new or updated…" and "could not verify…" lines), the shim note
+  ("added PATH shortcuts: …"), the `get-haiggoh.py --help` banner, and the menu banner
+  (`=== 👨🏻‍💻 get-haiggoh Menu ===`). Usage-error lines (e.g. "menu needs a terminal")
+  stay unbranded — not credit moments. The menu draws `===` rules, not a `│` box, so the
+  ZWJ mark needs no width correction (verified by eyeball, R4).
+- plugin.json description and README h1 carry 👨🏻‍💻; SKILL.md gained the standard
+  `## Branding (👨🏻‍💻)` section.
+- New `docs/branding.md`: the credit-moment rule, the marks table, the three carriers,
+  the never-brand list — the single spec doc future plugins adopt from. README links it.
+- Tests: new tests/test_branding.py pins the exact first lines (nudge ×2, --help banner,
+  menu banner); the shim test tightened to the exact branded string. RED 5/5 → GREEN;
+  mutation-checked. R1: no live fleet parsers of the old strings (get-haiggoh-shortcuts
+  is a separate archived checkout, not a consumer).
+- Version 0.9.1 → 0.9.2. Ships with Task 22 (marketplace sync) — NOT shipped here.
+
 ## [0.9.1] - 2026-10-26
 
 ### Fixed — the version check no longer goes blind behind a TLS-intercepting proxy, and blindness is never reported as 'current'

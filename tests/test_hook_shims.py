@@ -20,7 +20,7 @@ def test_hook_creates_missing_shims_even_when_marketplace_is_unregistered(world)
     assert r.returncode == 0
     assert (world.bin / "waypoints").is_file()
     out = json.loads(r.stdout)
-    assert "added PATH shortcuts: waypoints" in out["hookSpecificOutput"]["additionalContext"]
+    assert "👨🏻‍💻 get-haiggoh: added PATH shortcuts: waypoints" in out["hookSpecificOutput"]["additionalContext"]
 
 
 def test_hook_never_touches_a_collision(world):

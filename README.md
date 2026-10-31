@@ -1,6 +1,9 @@
-# get-haiggoh
+# 👨🏻‍💻 get-haiggoh
 
 CLI tool to manage haiggoh plugins for Claude Code.
+
+The haiggoh plugins' emoji-branding rules (credit moments, the marks table, the
+never-brand list) live in [docs/branding.md](docs/branding.md).
 
 ## Usage
 

@@ -290,7 +290,7 @@ def format_nudge(missing, outdated, unverified=()):
     'up to date', so they get one line of their own."""
     lines = []
     if missing or outdated:
-        lines.append("get-haiggoh: new or updated haiggoh plugins available "
+        lines.append("👨🏻‍💻 get-haiggoh: new or updated haiggoh plugins available "
                      "(ask me to \"install all my haiggoh plugins\" to sync):")
     for name in missing:
         lines.append(f"  + {name} (not installed)")
@@ -298,7 +298,7 @@ def format_nudge(missing, outdated, unverified=()):
         lines.append(f"  ^ {item['name']} {item['installed_version']} -> "
                      f"{item['remote_version']} (update available)")
     if unverified:
-        lines.append("get-haiggoh: could not verify the published version of "
+        lines.append("👨🏻‍💻 get-haiggoh: could not verify the published version of "
                      + ", ".join(sorted(unverified))
                      + " (network/TLS) -- `get-haiggoh plan` shows the diagnosis")
     return "\n".join(lines)

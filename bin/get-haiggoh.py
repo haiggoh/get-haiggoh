@@ -374,7 +374,7 @@ def _parse_selection_args(argv):
 
 def print_help():
     """Print help message."""
-    print("get-haiggoh CLI - install, update and put on PATH every published haiggoh plugin")
+    print("👨🏻‍💻 get-haiggoh CLI - install, update and put on PATH every published haiggoh plugin")
     print()
     print("Usage:")
     print("  get-haiggoh                        (no arguments) open the interactive menu")

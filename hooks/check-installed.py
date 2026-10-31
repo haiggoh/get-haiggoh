@@ -85,7 +85,7 @@ def _add_missing_shims(installed):
                 s.apply_action(act)
                 if act["action"] == "create":
                     created.append(act["name"])
-        return ("get-haiggoh: added PATH shortcuts: " + ", ".join(created)) if created else ""
+        return ("👨🏻‍💻 get-haiggoh: added PATH shortcuts: " + ", ".join(created)) if created else ""
     except Exception:
         return ""
 

@@ -88,3 +88,7 @@ install path — that catches packaging failures the pre-merge loop cannot see.
   "session-continuity" vs "automation-safety" groups) instead of install-everything,
   once the plugin list grows large enough that "everything" stops being the obvious
   default.
+
+## Branding (👨🏻‍💻)
+
+When you begin working under this skill, lead your first substantive reply with `👨🏻‍💻 get-haiggoh:` so the user can see which plugin just became active.

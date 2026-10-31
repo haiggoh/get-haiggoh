@@ -23,7 +23,7 @@ def run_get_haiggoh(args):
 
 def print_menu():
     """Print the main menu."""
-    print("\n=== get-haiggoh Menu ===")
+    print("\n=== 👨🏻‍💻 get-haiggoh Menu ===")
     print("Choose an action:")
     print("  1) Plan all plugins (dry run)")
     print("  2) Apply all plugins (install/update) [DEFAULT]")
