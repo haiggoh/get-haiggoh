@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.9.3] — 2026-10-31
+
+### Changed — approved description text + catalog parity (rtc-1.0.0 plan, Part B3/B4)
+
+- plugin.json description set to the user-approved text; ALL 16 marketplace.json
+  descriptions set to the same approved set (2026-10-31-approved-plugin-descriptions.json)
+  — watch-your-step's catalog entry now carries the user's 🛘🥾 prefix.
+- New `bin/catalog-parity.py` (`--help`, `--repos-root DIR`, unknown flag → exit 2):
+  exit 1 listing every mismatch, a missing checkout is a failure not a skip. Pinned by
+  tests/test_catalog_parity.py (5 tests: help, unknown flag, missing-checkout known-bad,
+  matching root → 0, mismatch listed).
+- Version 0.9.2 → 0.9.3. Ships LAST (B4): the catalog advertises only released versions.
+
 All notable changes to `get-haiggoh` are documented in this file.
 
 ## [0.9.2] - 2026-10-31

@@ -8,7 +8,7 @@
     {
       "name": "claude-code-desktop-sync",
       "source": { "source": "url", "url": "https://github.com/haiggoh/claude-code-desktop-sync.git" },
-      "description": "Keeps MCP-server config in sync between Claude Code and Claude Desktop via a SessionStart hook, and reports the manual steps for anything that can't be auto-synced.",
+      "description": "Two-way syncs stdio MCP servers between Claude Code and Claude Desktop at session start, rewriting launchers like npx to absolute paths for Desktop. HTTP or header-auth servers that cannot live in Desktop's config are reported with the exact manual step. One-sided changes propagate; conflicts are held and reported, never overwritten. Backs up before writing; a bundled skill offers on-demand sync.",
       "category": "productivity",
       "tags": ["mcp", "sync", "claude-desktop", "configuration"]
     },
@@ -57,7 +57,7 @@
     {
       "name": "waypoints",
       "source": { "source": "url", "url": "https://github.com/haiggoh/waypoints.git" },
-      "description": "Surfaces your open tasks / to-dos / waypoints as a persistent SessionStart banner that stays until each item is marked done \u2014 unlike resume-interrupted, it does NOT self-denoise. Reads an explicit store you maintain (optionally with 'surface-on' dates and priority). Optional: disable via /plugin.",
+      "description": "\ud83e\udded Surfaces your open tasks as a SessionStart banner that persists until each item is marked done \u2014 reading an explicit store, so it shows exactly what you logged. Manage items by just asking Claude or via the waypoints CLI (add, edit, done, triage, pin, repo tags, search), with journal, backups, archive, and corrupt-store recovery built in. Disable anytime via /plugin.",
       "category": "productivity",
       "tags": ["skill", "hook", "reminders", "todo", "sessions", "continuity"]
     },
@@ -78,7 +78,7 @@
     {
       "name": "get-haiggoh",
       "source": { "source": "url", "url": "https://github.com/haiggoh/get-haiggoh.git" },
-      "description": "\ud83d\udc68\ud83c\udffb\u200d\ud83d\udcbb Install and keep up to date every published haiggoh plugin from one place. Also the canonical home of the haiggoh marketplace catalog.",
+      "description": "\ud83d\udc68\ud83c\udffb\u200d\ud83d\udcbb Manage, install, and update haiggoh plugins for Claude Code via direct CLI commands or an interactive menu. Preview updates with dry-run plans, filter actions by plugin name or category, and automatically create PATH shortcuts so installed plugin tools run directly from your shell. Verifies installed versions against remote repositories and manages launchers on session start.",
       "category": "productivity",
       "tags": ["skill", "hook", "marketplace", "install", "bootstrap", "meta"]
     },
@@ -92,7 +92,7 @@
     {
       "name": "free-agents",
       "source": { "source": "url", "url": "https://github.com/haiggoh/free-agents.git" },
-      "description": "📡🦾 Run Claude Code on FREE inference — two equal lanes: local MLX models on Apple Silicon, and free cloud APIs (Gemini, Groq, NVIDIA, and a dozen more). MAIN use: dispatch delegatable sub-tasks from your paid session to a free model, keeping your capable model driving. ALSO: full free sessions via `csl` (local) or `csl remote` (free APIs) — remote is faster and is the preferred lane for most interactive work; local wins for long unattended runs. Blind-trust auto mode by default with sandbox.enabled bypass. Additive overlay: private paths/keys in a gitignored config.local, settings.json untouched. Works whether Claude Code connects to Anthropic directly or via a gateway.",
+      "description": "📡🦾 Run Claude Code on free inference, on two lanes: free cloud APIs (NVIDIA, Gemini and more) and local MLX models on Apple Silicon. Offload bounded sub-tasks from your paid session to a free model while your capable model keeps driving, or run whole free sessions with `csl` and `csl remote`. Includes a picker for lanes and models, role-based routing, free-tier key setup and a savings ledger.",
       "category": "productivity",
       "tags": ["local", "remote", "free", "mlx", "apple-silicon", "offline", "budget", "inference", "agents", "overlay"]
     },
@@ -106,14 +106,14 @@
     {
       "name": "lasting-plans",
       "source": { "source": "url", "url": "https://github.com/haiggoh/lasting-plans.git" },
-      "description": "\ud83d\udcdc Claude Code deletes plans older than cleanupPeriodDays (30 days by default). Lasting Plans keeps every plan and playbook in visible, Git-versioned archives (~/Claude-plans, ~/Claude-playbooks) that the sweep cannot touch, with creation dates and Finder tags recorded, a watch-folder LaunchAgent, and a CLI.",
+      "description": "\ud83d\udcdc Keeps every Claude Code plan and playbook in local, Git-versioned archives (~/Claude-plans, ~/Claude-playbooks), out of reach of the cleanup that deletes old plans. It imports existing files, watches for changes on macOS, keeps the archive copy when a source disappears, and records creation dates, Finder tags and labels. A CLI searches, shows history and restores; a remote backup is optional.",
       "category": "productivity",
       "tags": ["plans", "playbooks", "backup", "git", "retention", "launchd"]
     },
     {
       "name": "watch-your-step",
       "source": { "source": "url", "url": "https://github.com/haiggoh/watch-your-step.git" },
-      "description": "🥾 Catches command traps BEFORE a tool call runs: a backtick or $40 inside double quotes, a mistyped home directory, a file truncated before it is read, zsh's '====' abort, bash-isms under zsh. Rules are data with tests; silent-corruption traps are blocked with the exact fix, the rest are warnings, and '# wys:allow <rule>' overrides one command visibly.",
+      "description": "🛘🥾 A PreToolUse hook that checks each command before it runs. Silent-corruption traps — backticks in double quotes, commits with conflict markers, discarded uncommitted work, unrecoverable branch deletions — are blocked with the exact fix; risky habits like git add -A only warn. A git-level guard also refuses unrecoverable branch deletions by any route. Override a rule once: # wys:allow <rule>.",
       "category": "productivity",
       "tags": ["hook", "pretooluse", "shell", "zsh", "safety", "lint"]
     }
