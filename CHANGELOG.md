@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.9.4] — 2026-11-03
+
+### Changed — menu title in proper name (menu-restyle batch, user spec 2026-11-03)
+
+- The menu header's title line reads `👨🏻‍💻 Get Haiggoh` (proper name, not
+  kebab-case) per the 2026-11-03 menu spec; subtitle and fixed-width rule unchanged.
+  Pin updated in `tests/test_branding.py`, mutation-checked, live-fired.
+
 ## [0.9.3] — 2026-10-31
 
 ### Changed — approved description text + catalog parity (rtc-1.0.0 plan, Part B3/B4)

@@ -24,7 +24,7 @@ def run_get_haiggoh(args):
 def print_menu():
     """Print the main menu — branded title (emoji + name) with a subtitle, csl-style."""
     print()
-    print("👨🏻‍💻 get-haiggoh")
+    print("👨🏻‍💻 Get Haiggoh")
     print("   Install and keep every haiggoh plugin up to date — one place for the whole fleet")
     print("=" * 72)
     print()

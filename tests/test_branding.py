@@ -47,7 +47,7 @@ class CliBrandingTests(unittest.TestCase):
         r = subprocess.run([sys.executable, str(ROOT / "bin" / "get-haiggoh-menu")],
                            input="5\n", capture_output=True, text=True, timeout=15)
         lines = [ln for ln in r.stdout.splitlines() if ln.strip()]
-        self.assertEqual(lines[0], f"{MARK} get-haiggoh")
+        self.assertEqual(lines[0], f"{MARK} Get Haiggoh")
         self.assertTrue(lines[1].strip().startswith("Install and keep every haiggoh plugin"),
                         lines[1])
         self.assertTrue(lines[2] and set(lines[2]) == {"="}, lines[2])
