@@ -68,6 +68,55 @@ class CatalogParityTests(unittest.TestCase):
         self.assertEqual(r.returncode, 1)
         self.assertIn("MISMATCH: waypoints", r.stdout)
 
+    def test_catalog_extras_and_marks_lag_is_a_failure(self):
+        # known-bad: temp repo root whose extras lack one plugin and whose
+        # branding.md misses marks -> exit 1 naming each gap (not a skip)
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d) / "repo"
+            (root / ".claude-plugin").mkdir(parents=True)
+            (root / ".claude-plugin" / "marketplace.json").write_text(json.dumps(
+                {"plugins": [{"name": "alpha"}, {"name": "beta"}]}), encoding="utf-8")
+            (root / "catalog").mkdir()
+            (root / "catalog" / "plugin-extras.json").write_text(
+                json.dumps({"alpha": {"adds": "x"}}), encoding="utf-8")
+            (root / "catalog" / "related-tools.json").write_text(
+                json.dumps([{"name": "tool-x"}]), encoding="utf-8")
+            (root / "docs").mkdir()
+            (root / "docs" / "branding.md").write_text(
+                "## Marks\n\nalpha ✅\n", encoding="utf-8")
+            r = run("--repos-root", d, "--repo-root", str(root))
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("MISSING EXTRA: beta", r.stdout)
+        self.assertIn("NO MARK: beta", r.stdout)
+        self.assertIn("NO MARK: tool-x", r.stdout)
+
+    def test_catalog_complete_repo_root_exits_0(self):
+        # positive control: a complete temp repo root passes the catalog checks.
+        # The description loop always reads THIS repo's marketplace.json, so the
+        # repos-root needs a checkout for every one of its 16 entries (as in
+        # test_matching_root_exits_0) for the run to reach exit 0.
+        with tempfile.TemporaryDirectory() as d:
+            for entry in CATALOG["plugins"]:
+                pj = Path(d) / entry["name"] / ".claude-plugin"
+                pj.mkdir(parents=True)
+                (pj / "plugin.json").write_text(json.dumps(
+                    {"name": entry["name"], "description": APPROVED[entry["name"]]}),
+                    encoding="utf-8")
+            root = Path(d) / "repo"
+            (root / ".claude-plugin").mkdir(parents=True)
+            (root / ".claude-plugin" / "marketplace.json").write_text(json.dumps(
+                {"plugins": [{"name": "alpha", "description": "d"}]}), encoding="utf-8")
+            (root / "catalog").mkdir()
+            (root / "catalog" / "plugin-extras.json").write_text(
+                json.dumps({"alpha": {"adds": "x"}}), encoding="utf-8")
+            (root / "catalog" / "related-tools.json").write_text("[]", encoding="utf-8")
+            (root / "docs").mkdir()
+            (root / "docs" / "branding.md").write_text(
+                "## Marks\n\nalpha ✅\n", encoding="utf-8")
+            r = run("--repos-root", d, "--repo-root", str(root))
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertIn("extras and marks complete", r.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()

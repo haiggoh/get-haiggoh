@@ -1,0 +1,46 @@
+[
+  {
+    "name": "claude-code-transcript-distiller",
+    "repo": "haiggoh/Claude-Code-Transcript-Distiller",
+    "description": "Distills Claude Code session transcripts into compact, line-addressable evidence bundles for handoff to another LLM or archival.",
+    "adds": "brew formula haiggoh/tap/claude-code-transcript-distiller · cc-transcript CLI · 1 skill",
+    "formula": "haiggoh/tap/claude-code-transcript-distiller",
+    "fallback": {"kind": "release-installer", "asset": "claude-code-transcript-distiller-installer-v*.zsh"},
+    "without_brew_loses": null,
+    "version_cmd": ["cc-transcript", "--version"],
+    "menu": {"argv": ["cc-transcript"], "spec_min_version": null, "return_to_min_version": null}
+  },
+  {
+    "name": "human-shell",
+    "repo": "haiggoh/human-shell",
+    "description": "A macOS Terminal launcher that prints a visible pass/fail label under every command while preserving normal output and exit codes.",
+    "adds": "brew formula haiggoh/tap/human-shell · human-shell-install / human-shell-uninstall CLIs · Dock launchers",
+    "formula": "haiggoh/tap/human-shell",
+    "fallback": {"kind": "release-installer", "asset": "human-shell-installer-v*.zsh"},
+    "without_brew_loses": "no Dock icon",
+    "version_cmd": null,
+    "menu": null
+  },
+  {
+    "name": "mac-claude-migration",
+    "repo": "haiggoh/mac-claude-migration",
+    "description": "Packages the non-redownloadable state of a Claude Code setup (including secrets, chmod 600) into one archive and reinstalls everything public on a new Mac.",
+    "adds": "brew formula haiggoh/tap/mac-claude-migration · mac-claude-backup / mac-claude-restore CLIs",
+    "formula": "haiggoh/tap/mac-claude-migration",
+    "fallback": {"kind": "git"},
+    "without_brew_loses": null,
+    "version_cmd": null,
+    "menu": {"argv": ["./backup.sh"], "spec_min_version": null, "return_to_min_version": null}
+  },
+  {
+    "name": "mac-iphone-backup-cloudsync",
+    "repo": "haiggoh/mac-iphone-backup-cloudsync",
+    "description": "Archives the newest local iPhone backup into a genuine zip inside a cloud-synced folder, and can repeat on a schedule.",
+    "adds": "brew formula haiggoh/tap/mac-iphone-backup-cloudsync (builds from source) · iPhone Backup.app",
+    "formula": "haiggoh/tap/mac-iphone-backup-cloudsync",
+    "fallback": {"kind": "git"},
+    "without_brew_loses": null,
+    "version_cmd": null,
+    "menu": null
+  }
+]

@@ -1,0 +1,18 @@
+{
+  "claude-code-desktop-sync": {"adds": "1 skill · SessionStart hook · sync_code_desktop.py CLI"},
+  "no-hidden-changes": {"adds": "1 skill · SessionStart hook"},
+  "summon-skills": {"adds": "1 skill · SessionStart + UserPromptSubmit hooks · summon-skills.py CLI"},
+  "check-code": {"adds": "1 skill · PostToolUse hook · check-code.py CLI", "menu": {"argv": ["check-code.py", "setup"], "spec_min_version": null, "return_to_min_version": null}},
+  "measure-twice": {"adds": "1 skill · SessionStart hook"},
+  "resume-interrupted": {"adds": "1 skill · SessionStart hook · interrupted CLI"},
+  "mcp-smoke-test": {"adds": "1 skill"},
+  "waypoints": {"adds": "1 skill · SessionStart hook · waypoints.py CLI · /waypoints-gated command", "menu": {"argv": ["waypoints_menu.py"], "spec_min_version": null, "return_to_min_version": null}},
+  "audit-loose-ends": {"adds": "2 skills · SessionStart hook"},
+  "run-to-completion": {"adds": "9 skills · SessionStart hook · rtc-ship.sh CLI"},
+  "get-haiggoh": {"adds": "1 skill · SessionStart hook · get-haiggoh + get-haiggoh-menu CLIs"},
+  "brief-agents": {"adds": "1 skill · SessionStart + PreToolUse hooks · brief-agents.py CLI"},
+  "free-agents": {"adds": "9 skills · 8 hooks (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, Stop, StopFailure, SessionEnd, PostCompact) · csl / lowkey / free-agent-tool.py CLIs", "formula": "haiggoh/tap/free-agents", "menu": {"argv": ["csl"], "spec_min_version": null, "return_to_min_version": null}},
+  "cost-tracker": {"adds": "1 skill · SessionEnd hook · cost-tracker CLI · /cost-today command", "menu": {"argv": ["cost-tracker"], "spec_min_version": null, "return_to_min_version": null}},
+  "lasting-plans": {"adds": "1 skill · SessionStart hook · lasting-plans CLI", "menu": {"argv": ["lasting-plans"], "spec_min_version": null, "return_to_min_version": null}},
+  "watch-your-step": {"adds": "1 skill · SessionStart + PreToolUse hooks · watch-your-step.py CLI"}
+}
