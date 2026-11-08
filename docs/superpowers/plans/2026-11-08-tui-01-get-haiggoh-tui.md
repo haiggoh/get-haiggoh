@@ -10,6 +10,21 @@
 
 **Spec:** `docs/superpowers/specs/2026-11-08-get-haiggoh-tui-design.md`. Index: `2026-11-08-tui-00-index.md`.
 
+## 🚨 System instructions for the executor — read first
+
+1. This plan is self-contained. You have no chat history; the spec + this plan + the index are the whole brief. Re-verify every *confirmed live* fact before relying on it.
+2. Before any edit: write exactly three strategy sentences, then run Phase 0. Phase 0 is read-only.
+3. Run Plan 2 first (index order). Do not start this plan until Plan 2's receipts are in.
+4. Work only in the `feat/tui` worktree. Never switch the branch of `~/ClaudeWorkspace/get-haiggoh` itself; never touch another repo (that is Plan 3).
+5. The highest boundary you may cross is **release of get-haiggoh 0.10.0 + installed-copy refresh + dogfood**. Merging is not implied by committing; releasing is not implied by merging — each needs its gate in the authority matrix.
+6. A task is done only with its receipt: command, real output line, exit status. "Not tested" is written as such, never as passed. Failure ⇒ STOP that task, diagnose, fix, rerun, show both runs.
+7. Every important behaviour needs a known-bad: the mutation/bad fixture must go RED before the green counts. Never weaken a test to make it pass; if an assertion contradicts a verified fact, inspect the instrument.
+8. At each QC milestone, run /offload (section below). Do not start the next task with an open finding.
+9. Commits: stage by path (never `git add -A`); co-author the commit as the model you are actually running (check your identity first; trailers in memory `commit-attribution-by-model`) below the `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>` line.
+10. Never kill, restart or reconfigure the endpoint serving your session or any other (ports 4141-4151, 8000-8010). Never edit `~/.claude/plugins/cache` or `installed_plugins.json`.
+11. Use native Read/Edit/Grep for files; shell for git, tests, brew. Never rewrite a file from a fragment; Edit anchors come from a fresh Read.
+12. If a prerequisite cannot be verified, pause the dependent work and say so in the final report — do not guess around it.
+
 ## Global Constraints
 
 - Pins copied verbatim from `free-agents/install/session-picker-requirements.txt` (*confirmed live* 2026-11-08: `textual==3.7.1`, `rich==15.0.0`, …) into `tui-requirements.txt`, with a header naming that source.
@@ -214,4 +229,14 @@ Downloads: venv pins (Task 7/8, allowed). Real `claude plugin`/`brew`: Task 9 St
 
 ## Final delivery questions
 
-Implemented vs only planned (Plan 3 is planned only); which receipts ran (paste the result lines); user work preserved (no other repo touched); stopped at the release boundary; blockers stated plainly.
+Highest granted boundary (restated): **release of get-haiggoh 0.10.0 + installed-copy refresh + dogfood** — nothing beyond.
+
+- Implemented vs only planned (Plan 3 is planned only)?
+- Which receipts ran (paste the result lines), which tests did NOT run and why?
+- User work preserved (no other repo touched, main checkout's branch unchanged)?
+- Were real brew / `claude plugin` / live systems touched outside Task 9 Step 3?
+- Do direct (`get-haiggoh plan|apply`) and interactive (TUI) behaviour still agree?
+- Stopped at the release boundary? Blockers stated plainly?
+- Was the delivered plan + CHANGELOG reread from disk before reporting?
+
+Risks that cannot be tested safely here: the real 🍺 Homebrew installer on a machine without brew (only faked); a real bulk uninstall; a newcomer's first launch on a fresh Mac. Say so in the report.

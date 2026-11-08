@@ -10,6 +10,13 @@
 
 **Spec:** `docs/superpowers/specs/2026-11-08-get-haiggoh-tui-design.md` § "Prerequisite — mac-claude-migration 🍺 formula".
 
+## 🚨 System instructions for the executor — read first
+
+1. Self-contained: no chat history. The same 12 standing rules as Plan 1's "read first" block apply here (`2026-11-08-tui-01-get-haiggoh-tui.md`) — read them now; rules 3 and 4 are replaced by 2 and 3 below.
+2. This plan runs FIRST. Work on feature branches in homebrew-tap and mac-claude-migration only; no worktree is needed in these two repos unless Phase 0 finds dirty files (then stop and report).
+3. Task 3 edits get-haiggoh only after Plan 1 Task 1 exists — otherwise record it as deferred.
+4. Highest boundary: **merge of the tap formula + release of mac-claude-migration 0.1.5.** Leave this Mac with no stray brew install of the formula.
+
 ## Global Constraints
 
 - Formula url form: `https://github.com/haiggoh/mac-claude-migration/archive/refs/tags/v<VER>.tar.gz` (the form `bump_formulas.py` recognises — *confirmed live* in `homebrew-tap/README.md` § Automatic formula updates).
@@ -75,4 +82,5 @@ Highest granted boundary: **release of mac-claude-migration 0.1.5 and merge of t
 
 ## Final delivery questions
 
-Implemented vs planned; which receipts ran (paste them); machine left with no stray brew install; stopped at the authority boundary.
+Highest granted boundary (restated): **merge of the tap formula + release of mac-claude-migration 0.1.5.**
+Implemented vs planned; which receipts ran (paste them) and which did not; machine left with no stray brew install; stopped at the authority boundary; plan reread from disk before reporting.
