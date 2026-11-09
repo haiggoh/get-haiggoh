@@ -80,20 +80,23 @@ class RunStepsTests(unittest.TestCase):
     def test_failure_midway_runs_the_rest(self):
         before = [row("a", "outdated", "1.0", "2.0"), row("b", "outdated", "1.0", "2.0"),
                   row("c", "outdated", "1.0", "2.0")]
-        # each step fixes only its own row, as a real re-read would show
+        # each step fixes only its own row; b's execute fails AND its row stays
+        # outdated (ok=False) — the rest must still run (a break-on-failure mutant
+        # would stop after b and this test goes RED)
         stages = [before,
                   [row("a", "current", "2.0", "2.0"), row("b", "outdated", "1.0", "2.0"),
                    row("c", "outdated", "1.0", "2.0")],
-                  [row("a", "current", "2.0", "2.0"), row("b", "current", "2.0", "2.0"),
+                  [row("a", "current", "2.0", "2.0"), row("b", "outdated", "1.0", "2.0"),
                    row("c", "outdated", "1.0", "2.0")],
-                  [row("a", "current", "2.0", "2.0"), row("b", "current", "2.0", "2.0"),
+                  [row("a", "current", "2.0", "2.0"), row("b", "outdated", "1.0", "2.0"),
                    row("c", "current", "2.0", "2.0")]]
         steps = [step("a", "update"), step("b", "update"), step("c", "update")]
         ex = FakeExec(fail_on=["b@haiggoh"])
         results = rn.run_steps(steps, execute=ex, reread=SeqReread(stages))
         self.assertEqual(len(results), 3)
         self.assertEqual(len(ex.calls), 3, "every step runs even after a failure")
-        self.assertTrue(all(r.ok for r in results), "ok comes from the re-read state")
+        self.assertEqual([r.ok for r in results], [True, False, True],
+                         "ok comes from the re-read state, not the exit code")
 
     def test_ok_from_reread_not_exit_code(self):
         before = [row("waypoints", "outdated", "0.14.3", "0.15.0")]
