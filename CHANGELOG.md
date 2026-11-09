@@ -28,6 +28,14 @@
   the launched program is reported the same way, never as a traceback.
 - `mac-claude-migration`'s menu called `./backup.sh`, which only works from inside the
   repo. It now calls `mac-claude-backup`, the name the brew formula installs.
+- Fixed: waypoints never opened. The catalog ran `waypoints_menu.py`, a library module with
+  no `__main__`, so it imported and exited 0 having done nothing. It now runs
+  `waypoints.py menu`, the CLI's own selector. Verified in a PTY: the menu draws its
+  dashboard.
+- **Human Shell** and **iPhone Backup** are now clickable. A new `{"app": "<Name>"}` menu
+  kind finds `<Name>.app` in `~/Applications` (where both installers put it), then in
+  `/Applications`, and launches it with `/usr/bin/open`. Each opens as its own app; the
+  TUI stays up and isn't suspended. If the app isn't found, a notice says so.
 
 ### Changed — browse mode and select modes (user 2026-11-09)
 
@@ -39,7 +47,9 @@
   stays listed: rows that can't take part are greyed with no box, and the rest get
   `[x]`/`[ ]`. Update and Install start with every eligible row ticked; Uninstall starts
   with none. **Enter, or the same key again,** runs the mode. **Esc** or **b** goes back to
-  browse mode. Select all / Unselect all only appear inside a mode.
+  browse mode, and so does the **Abort** button. Select all / Unselect all / Abort only
+  appear inside a mode, and Abort runs nothing.
+- Every section headline is followed by an empty row.
 - Fixed: Select all removed the boxes instead of filling them. Rows were markup strings,
   and Rich parses `[x]` as a style tag and drops it. Rows are now plain `Text`.
 - ↑/↓ always move through the list, also after a button was clicked, and they skip
@@ -54,11 +64,11 @@
 
 ### Tests
 
-- `tests/tui/test_tui_0102.py` (24 tests): driver and DECRQM, the PTY frame, the pipe
+- `tests/tui/test_tui_0102.py` (30 tests): driver and DECRQM, the PTY frame, the pipe
   staying clean, argv resolution, a notice instead of a crash, the modes, grouping, the
   non-link style, arrow navigation, and the info box's frame and position. Pilot and
-  menuspec tests were updated to the mode contract. Full suite 278 passed, 0 skipped
-  (TUI venv). Six mutations, one per fix, each turn the suite red.
+  menuspec tests were updated to the mode contract. Full suite 284 passed, 0 skipped
+  (TUI venv). Ten mutations, one per fix, each turn the suite red.
 
 ## [0.10.1] — 2026-11-09
 

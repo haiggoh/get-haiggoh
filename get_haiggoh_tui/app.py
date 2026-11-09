@@ -111,6 +111,8 @@ class GetHaiggohApp(App):
         # browse mode (None): no checkboxes, enter opens an item's menu. A mode in MODES:
         # checkboxes on eligible rows, enter / the same key again runs it, esc/b leaves.
         self.mode: str | None = None
+        # app rows launch through `open` (own window); tests replace this
+        self.app_opener = lambda argv: __import__("subprocess").run(argv, check=False)
 
     # --- lifecycle ---------------------------------------------------------
     def on_mount(self):

@@ -6,6 +6,7 @@ The #info frame and the hover-following option list are PORTED from CSL
 """
 from __future__ import annotations
 
+import os
 import subprocess
 
 from textual import on
@@ -110,6 +111,7 @@ class MainScreen(Screen):
             yield Button("Update 0", id="btn-update")
             yield Button("Install 0", id="btn-install")
             yield Button("Uninstall", id="btn-uninstall")
+            yield Button("Abort", id="btn-abort")  # leaves a mode, runs nothing (user 2026-11-09)
         yield Static(app.summary, id="summary")
         yield Static(self._hint(), id="hint")
 
@@ -119,7 +121,7 @@ class MainScreen(Screen):
             keys = "↑↓ move · enter open · u update · i install · x uninstall · q quit"
         else:
             keys = (f"space tick · a all · n none · enter or {app.mode[0]} run {app.mode} · "
-                    "esc back · q quit")
+                    "esc or Abort back · q quit")
         return f"{keys} · get-haiggoh {app.version}"
 
     def on_mount(self):
@@ -132,7 +134,7 @@ class MainScreen(Screen):
         app = self.app
         self.query_one("#subtitle", Static).update(_MODE_TITLE[app.mode])
         self.query_one("#hint", Static).update(self._hint())
-        for bid in ("#btn-all", "#btn-none"):
+        for bid in ("#btn-all", "#btn-none", "#btn-abort"):
             self.query_one(bid).display = app.mode is not None
 
     def rebuild_rows(self):
@@ -149,6 +151,7 @@ class MainScreen(Screen):
         for section in sections:
             title = "Claude Code plugins" if section == "plugin" else "Related tools"
             options.append(Option(title, id=f"section:{section}", disabled=True))
+            options.append(Option("", id=f"gap:head:{section}", disabled=True))  # user 2026-11-09
             rows = [r for r in app.rows if r.section == section]
             # items with an interactive menu first, a blank row, then the rest (user 2026-11-09)
             links = [r for r in rows if r.menu]
@@ -281,6 +284,12 @@ class MainScreen(Screen):
         kind, payload = app.menu_for(row)
         if kind == "spec":
             app.push_screen(ItemMenuScreen(row, payload))
+        elif kind == "app":
+            try:
+                app.app_opener(list(payload))
+                app.notify(f"Opening {os.path.basename(payload[-1])[:-4]}…")
+            except OSError as exc:
+                app.notify(f"Couldn't open {payload[-1]}: {exc.strerror or exc}", severity="error")
         elif kind == "missing":
             app.notify(str(payload), severity="warning")
         elif kind == "legacy":
@@ -315,6 +324,10 @@ class MainScreen(Screen):
     @on(Button.Pressed, "#btn-install")
     def _b_install(self):
         self.action_install()
+
+    @on(Button.Pressed, "#btn-abort")
+    def _b_abort(self):
+        self.action_back()
 
     @on(Button.Pressed, "#btn-uninstall")
     def _b_uninstall(self):

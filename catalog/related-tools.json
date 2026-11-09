@@ -19,7 +19,7 @@
     "fallback": {"kind": "release-installer", "asset": "human-shell-installer-v*.zsh"},
     "without_brew_loses": "no Dock icon",
     "version_cmd": null,
-    "menu": null
+    "menu": {"app": "Human Shell"}
   },
   {
     "name": "mac-claude-migration",
@@ -41,6 +41,6 @@
     "fallback": {"kind": "git"},
     "without_brew_loses": null,
     "version_cmd": null,
-    "menu": null
+    "menu": {"app": "iPhone Backup"}
   }
 ]

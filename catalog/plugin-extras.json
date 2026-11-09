@@ -6,7 +6,7 @@
   "measure-twice": {"adds": "1 skill · SessionStart hook"},
   "resume-interrupted": {"adds": "1 skill · SessionStart hook · interrupted CLI"},
   "mcp-smoke-test": {"adds": "1 skill"},
-  "waypoints": {"adds": "1 skill · SessionStart hook · waypoints.py CLI · /waypoints-gated command", "menu": {"argv": ["waypoints_menu.py"], "spec_min_version": null, "return_to_min_version": null}},
+  "waypoints": {"adds": "1 skill · SessionStart hook · waypoints.py CLI · /waypoints-gated command", "menu": {"argv": ["waypoints.py", "menu"], "spec_min_version": null, "return_to_min_version": null}},
   "audit-loose-ends": {"adds": "2 skills · SessionStart hook"},
   "run-to-completion": {"adds": "9 skills · SessionStart hook · rtc-ship.sh CLI"},
   "get-haiggoh": {"adds": "1 skill · SessionStart hook · get-haiggoh + get-haiggoh-menu CLIs"},

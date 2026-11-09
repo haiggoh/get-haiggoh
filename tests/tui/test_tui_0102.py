@@ -167,7 +167,10 @@ class ResolveTests(unittest.TestCase):
             for it in items:
                 m = isinstance(it, dict) and it.get("menu")
                 if m:
-                    self.assertFalse(m["argv"][0].startswith("./"), (f, m))
+                    if "argv" in m:  # app menus ({"app": ...}) have no argv
+                        self.assertFalse(m["argv"][0].startswith("./"), (f, m))
+                    else:
+                        self.assertIn("app", m, (f, m))
 
     def test_enter_on_missing_exe_notifies_and_stays_alive(self):
         with tempfile.TemporaryDirectory() as d:
@@ -217,6 +220,66 @@ class _NullSuspend:
         return False
 
 
+class CatalogMenuTests(unittest.TestCase):
+    def _cat(self):
+        import json
+        extras = json.loads((ROOT / "catalog" / "plugin-extras.json").read_text())
+        tools = {t["name"]: t for t in json.loads((ROOT / "catalog" / "related-tools.json").read_text())}
+        return extras, tools
+
+    def test_waypoints_opens_the_cli_menu_not_the_library_module(self):
+        # waypoints_menu.py has no __main__: running it imports and exits 0 (user 2026-11-09)
+        extras, _ = self._cat()
+        self.assertEqual(extras["waypoints"]["menu"]["argv"], ["waypoints.py", "menu"])
+
+    def test_human_shell_and_iphone_backup_launch_as_apps(self):
+        _, tools = self._cat()
+        self.assertEqual(tools["human-shell"]["menu"]["app"], "Human Shell")
+        self.assertEqual(tools["mac-iphone-backup-cloudsync"]["menu"]["app"], "iPhone Backup")
+
+
+class AppMenuTests(unittest.TestCase):
+    def test_app_resolves_in_user_applications_first(self):
+        with tempfile.TemporaryDirectory() as d:
+            for base in ("home/Applications", "sys"):
+                (Path(d) / base / "Human Shell.app").mkdir(parents=True)
+            r = row("human-shell", "current", section="tool", menu={"app": "Human Shell"})
+            kind, payload = ms.menu_for(r, app_dirs=[str(Path(d) / "home/Applications"), str(Path(d) / "sys")])
+            self.assertEqual((kind, payload),
+                             ("app", ["/usr/bin/open", str(Path(d) / "home/Applications/Human Shell.app")]))
+
+    def test_missing_app_is_a_notice(self):
+        with tempfile.TemporaryDirectory() as d:
+            r = row("human-shell", "current", section="tool", menu={"app": "Human Shell"})
+            kind, payload = ms.menu_for(r, app_dirs=[d])
+            self.assertEqual(kind, "missing")
+            self.assertIn("Human Shell.app", payload)
+
+    def test_enter_on_app_row_opens_it_without_suspending(self):
+        with tempfile.TemporaryDirectory() as d:
+            opened, suspended = [], []
+            rows = make_rows()
+            for r in rows:
+                if r.name == "human-shell":
+                    r.menu = {"app": "Human Shell"}
+            app = make_app(d, rows=rows,
+                           menu_for=lambda r: ("app", ["/usr/bin/open", "/x/Human Shell.app"])
+                           if r.name == "human-shell" else ("none", None),
+                           suspend_fn=lambda: (suspended.append(1), _NullSuspend())[1])
+            app.app_opener = lambda argv: opened.append(list(argv))
+            async def go():
+                async with app.run_test() as pilot:
+                    await pilot.pause()
+                    ol = app.screen.query_one("#rows")
+                    ol.highlighted = next(i for i, o in enumerate(ol.options) if o.id == "human-shell")
+                    await pilot.press("enter")
+                    await pilot.pause()
+                    return type(app.screen).__name__
+            self.assertEqual(run(go()), "MainScreen")
+            self.assertEqual(opened, [["/usr/bin/open", "/x/Human Shell.app"]])
+            self.assertEqual(suspended, [], "an app opens in its own window; the TUI stays up")
+
+
 # --- 4. browse mode / select mode ---------------------------------------------------
 
 def menu_rows():
@@ -251,9 +314,12 @@ class ModeTests(unittest.TestCase):
                 return [o.id for o in app.screen.query_one("#rows").options]
             _app, ids = self._go(d, s)
             plugin = ids[ids.index("section:plugin") + 1: ids.index("section:tool")]
-            self.assertEqual(plugin[:2], ["waypoints", "free-agents"])
-            self.assertEqual(plugin[2], "gap:plugin")
-            self.assertEqual(set(plugin[3:]), {"get-haiggoh", "cost-tracker"})
+            self.assertEqual(plugin[0], "gap:head:plugin", "an empty row after every headline")
+            self.assertEqual(plugin[1:3], ["waypoints", "free-agents"])
+            self.assertEqual(plugin[3], "gap:plugin")
+            self.assertEqual(set(plugin[4:]), {"get-haiggoh", "cost-tracker"})
+            tool_head = ids.index("section:tool")
+            self.assertEqual(ids[tool_head + 1], "gap:head:tool")
 
     def test_space_does_nothing_in_browse_mode(self):
         with tempfile.TemporaryDirectory() as d:
@@ -317,6 +383,23 @@ class ModeTests(unittest.TestCase):
                 _app, (mode, labels) = self._go(d, s)
                 self.assertIsNone(mode, key)
                 self.assertFalse(labels["waypoints"].startswith("["), key)
+
+    def test_abort_button_leaves_mode_and_only_shows_in_a_mode(self):
+        with tempfile.TemporaryDirectory() as d:
+            async def s(app, pilot):
+                btn = app.screen.query_one("#btn-abort")
+                shown_browse = btn.display
+                await pilot.press("i")
+                await pilot.pause()
+                shown_mode = btn.display
+                await pilot.click("#btn-abort")
+                await pilot.pause()
+                return shown_browse, shown_mode, app.mode, set(app.ticks), app.runner.calls
+            _app, (browse, mode_shown, mode, ticks, calls) = self._go(d, s)
+            self.assertFalse(browse, "no Abort in browse mode")
+            self.assertTrue(mode_shown)
+            self.assertIsNone(mode)
+            self.assertEqual((ticks, calls), (set(), []), "abort runs nothing")
 
     def test_same_key_again_runs(self):
         with tempfile.TemporaryDirectory() as d:

@@ -158,8 +158,22 @@ def resolve_argv(row: Row, argv: list[str], installed: dict | None = None,
     return None
 
 
-def menu_for(row: Row, run=subprocess.run, installed: dict | None = None, which=shutil.which
-             ) -> tuple[Literal["spec", "legacy", "missing", "none"], dict | list[str] | str | None]:
+# Where the haiggoh installers put their launchers: human-shell and mac-iphone-backup-cloudsync
+# both document ~/Applications (no admin needed); /Applications is the system fallback.
+APP_DIRS = ("~/Applications", "/Applications")
+
+
+def resolve_app(name: str, app_dirs=APP_DIRS) -> str | None:
+    for base in app_dirs:
+        cand = os.path.join(os.path.expanduser(base), f"{name}.app")
+        if os.path.isdir(cand):
+            return cand
+    return None
+
+
+def menu_for(row: Row, run=subprocess.run, installed: dict | None = None, which=shutil.which,
+             app_dirs=APP_DIRS,
+             ) -> tuple[Literal["spec", "legacy", "app", "missing", "none"], dict | list[str] | str | None]:
     """('spec', spec) only when row.installed >= menu.spec_min_version (non-null) AND
     menu.argv + ['--menu-spec'] returns valid menu-spec JSON within 5 s; otherwise
     ('legacy', menu.argv + ['--return-to', 'get-haiggoh'] when installed >=
@@ -168,6 +182,13 @@ def menu_for(row: Row, run=subprocess.run, installed: dict | None = None, which=
     menu = row.menu
     if not menu:
         return ("none", None)
+    if menu.get("app"):
+        # a macOS app: `open` launches it in its own window, never inside this terminal
+        path = resolve_app(menu["app"], app_dirs)
+        if path is None:
+            return ("missing", f"{row.name}: {menu['app']}.app isn't in ~/Applications or "
+                               "/Applications — install it first")
+        return ("app", ["/usr/bin/open", path])
     raw = list(menu.get("argv") or [])
     argv = resolve_argv(row, raw, installed=installed, which=which)
     if argv is None:
