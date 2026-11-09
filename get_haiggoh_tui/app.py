@@ -63,6 +63,24 @@ def get_driver_class():
 
 MODES = ("update", "install", "uninstall")
 
+# An emoji cluster is built from these categories: So (the symbol), Sk (skin-tone
+# modifier), Cf (zero-width joiner), Mn (variation selector U+FE0F).
+_EMOJI_CATS = {"So", "Sk", "Cf", "Mn"}
+
+
+def strip_leading_emoji(text: str) -> str:
+    """Drop a leading emoji cluster and the spaces after it. The info box's title line
+    already carries the brand mark, so a description that opens with an emoji showed it
+    twice (user 2026-11-09). Decided by the text's own leading characters, never by matching
+    the mark (they come from different files), so a description whose emoji changes can't
+    bring the duplicate back. Returns the text unchanged if nothing would be left."""
+    import unicodedata
+    i = 0
+    while i < len(text) and unicodedata.category(text[i]) in _EMOJI_CATS:
+        i += 1
+    rest = text[i:].lstrip()
+    return rest if i and rest else text
+
 
 class GetHaiggohApp(App):
     """CSL-style TUI listing every haiggoh plugin and related tool."""
@@ -236,7 +254,7 @@ class GetHaiggohApp(App):
             return ""
         status = _STATUS_TEXT.get(r.status) or f"latest {r.latest}"
         lines = [f"{r.mark} {r.name} — installed {r.installed or 'not installed'} {status}",
-                 r.description, f"Adds: {r.adds}"]
+                 strip_leading_emoji(r.description or ""), f"Adds: {r.adds}"]
         if r.status == "missing":
             steps = plan_steps([r], {r.name}, "install", self.brew_present, self.brew_allowed)
             route = steps[0].route if steps else "?"

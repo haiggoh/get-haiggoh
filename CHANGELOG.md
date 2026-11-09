@@ -49,7 +49,13 @@
   with none. **Enter, or the same key again,** runs the mode. **Esc** or **b** goes back to
   browse mode, and so does the **Abort** button. Select all / Unselect all / Abort only
   appear inside a mode, and Abort runs nothing.
-- Every section headline is followed by an empty row.
+- Every section headline is followed by an empty row, and two empty rows set each later
+  group (Related tools) apart from the one above it.
+- Menu rows lead in a fixed order: free-agents, waypoints, cost-tracker, check-code. Any
+  other row with a menu follows in marketplace order.
+- **Quit** is its own action row after the list, in its own group (`  Q) Quit`, as CSL
+  renders actions). Enter on it quits from browse mode or from any mode, without running
+  the mode.
 - Fixed: Select all removed the boxes instead of filling them. Rows were markup strings,
   and Rich parses `[x]` as a style tag and drops it. Rows are now plain `Text`.
 - ↑/↓ always move through the list, also after a button was clicked, and they skip
@@ -61,14 +67,20 @@
   session_picker.py:801) and, as in CSL, is composed after the spacer, so it sits directly
   on the button row. It stays hidden until there is text to show. 0.10.1 removed the grey
   *painted* box; that stays removed (still no background).
+- The emoji no longer appears twice. The title line carries the brand mark, so the about
+  text drops a leading emoji cluster (symbol, skin tone, ZWJ, VS16) plus the spaces after
+  it. The check reads the text's own leading characters and never compares them against
+  the mark, which comes from a different file, so editing a description's emoji can't
+  bring the duplicate back.
 
 ### Tests
 
-- `tests/tui/test_tui_0102.py` (30 tests): driver and DECRQM, the PTY frame, the pipe
-  staying clean, argv resolution, a notice instead of a crash, the modes, grouping, the
-  non-link style, arrow navigation, and the info box's frame and position. Pilot and
-  menuspec tests were updated to the mode contract. Full suite 284 passed, 0 skipped
-  (TUI venv). Ten mutations, one per fix, each turn the suite red.
+- `tests/tui/test_tui_0102.py` (34 tests): driver and DECRQM, the PTY frame, the pipe
+  staying clean, argv and app resolution, a notice instead of a crash, the modes and Abort,
+  grouping and its order, the Quit row, the non-link style, arrow navigation, the emoji
+  de-duplication, and the info box's frame and position. Pilot and menuspec tests were
+  updated to the mode contract. Full suite 288 passed, 0 skipped (TUI venv). Fourteen
+  mutations, one per fix, each turn the suite red.
 
 ## [0.10.1] — 2026-11-09
 

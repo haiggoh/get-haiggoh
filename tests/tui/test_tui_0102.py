@@ -313,13 +313,30 @@ class ModeTests(unittest.TestCase):
             async def s(app, pilot):
                 return [o.id for o in app.screen.query_one("#rows").options]
             _app, ids = self._go(d, s)
-            plugin = ids[ids.index("section:plugin") + 1: ids.index("section:tool")]
+            plugin = ids[ids.index("section:plugin") + 1: ids.index("section:tool") - 2]
             self.assertEqual(plugin[0], "gap:head:plugin", "an empty row after every headline")
-            self.assertEqual(plugin[1:3], ["waypoints", "free-agents"])
+            self.assertEqual(plugin[1:3], ["free-agents", "waypoints"])  # LINK_ORDER
             self.assertEqual(plugin[3], "gap:plugin")
             self.assertEqual(set(plugin[4:]), {"get-haiggoh", "cost-tracker"})
             tool_head = ids.index("section:tool")
             self.assertEqual(ids[tool_head + 1], "gap:head:tool")
+            # two empty rows set the related tools apart from the plugins (user 2026-11-09)
+            self.assertEqual(ids[tool_head - 2: tool_head], ["gap:pre:tool:1", "gap:pre:tool:2"])
+            self.assertNotEqual(ids[0], "gap:pre:plugin:1", "no padding above the first headline")
+
+    def test_link_rows_follow_the_pinned_order(self):
+        # user 2026-11-09: free-agents, waypoints, cost-tracker, check-code; unnamed menu
+        # rows follow in their incoming (marketplace) order
+        rows = [row(n, "current", menu=MENU) for n in
+                ("check-code", "zeta-plugin", "waypoints", "lasting-plans", "free-agents", "cost-tracker")]
+        rows.append(row("no-menu", "current"))
+        with tempfile.TemporaryDirectory() as d:
+            async def s(app, pilot):
+                return [o.id for o in app.screen.query_one("#rows").options]
+            _app, ids = self._go(d, s, rows=rows)
+            links = ids[ids.index("gap:head:plugin") + 1: ids.index("gap:plugin")]
+            self.assertEqual(links, ["free-agents", "waypoints", "cost-tracker", "check-code",
+                                     "zeta-plugin", "lasting-plans"])
 
     def test_space_does_nothing_in_browse_mode(self):
         with tempfile.TemporaryDirectory() as d:
@@ -383,6 +400,30 @@ class ModeTests(unittest.TestCase):
                 _app, (mode, labels) = self._go(d, s)
                 self.assertIsNone(mode, key)
                 self.assertFalse(labels["waypoints"].startswith("["), key)
+
+    def test_quit_is_its_own_action_row_after_the_list(self):
+        # CSL parity (session_picker.py:1737 renders actions as "  Q) Quit"), user 2026-11-09
+        for enter_mode in (False, True):
+            with tempfile.TemporaryDirectory() as d:
+                async def s(app, pilot, enter_mode=enter_mode):
+                    if enter_mode:
+                        await pilot.press("u")
+                        await pilot.pause()
+                    ol = app.screen.query_one("#rows")
+                    opts = list(ol.options)
+                    last, before = opts[-1], opts[-2]
+                    label = ol._get_visual(last).plain
+                    ol.highlighted = len(opts) - 1
+                    await pilot.press("enter")
+                    await pilot.pause()
+                    return last.id, last.disabled, before.id, label, app.is_running, app.runner.calls
+                _app, (lid, ldis, bid, label, running, calls) = self._go(d, s)
+                self.assertEqual(lid, "action:quit", enter_mode)
+                self.assertFalse(ldis, enter_mode)
+                self.assertEqual(bid, "gap:actions", "a blank row separates it from the repos")
+                self.assertEqual(label.strip(), "Q) Quit")
+                self.assertFalse(running, f"enter on Quit exits (mode={enter_mode})")
+                self.assertEqual(calls, [], "quitting never runs the mode")
 
     def test_abort_button_leaves_mode_and_only_shows_in_a_mode(self):
         with tempfile.TemporaryDirectory() as d:
@@ -479,6 +520,42 @@ class KeyboardNavTests(unittest.TestCase):
             self.assertEqual(ids[0], ids[2])
             self.assertNotEqual(ids[0], ids[1])
             self.assertEqual(ids[3], ids[1], "arrows still drive the list after a button click")
+
+
+class InfoEmojiTests(unittest.TestCase):
+    """The title line carries the brand mark; the about text must not repeat an emoji —
+    decided by the text's own leading characters, not by matching the mark, so a
+    description that changes its emoji can't bring the duplicate back (user 2026-11-09)."""
+
+    def test_strip_leading_emoji_cluster(self):
+        from get_haiggoh_tui.app import strip_leading_emoji as f
+        cases = {
+            "👨🏻\u200d💻 Manage, install": "Manage, install",   # skin tone + ZWJ
+            "👁️ Steers Claude": "Steers Claude",                  # VS16
+            "🩻🔬 After each edit": "After each edit",            # two emoji
+            "🚀 a different emoji than the mark": "a different emoji than the mark",
+            "Two-way syncs": "Two-way syncs",                    # no emoji: untouched
+            "“Quoted” start": "“Quoted” start",                  # punctuation is kept
+            "🧭": "🧭",                                          # nothing left: keep it
+        }
+        for given, want in cases.items():
+            self.assertEqual(f(given), want, repr(given))
+
+    def test_info_box_shows_the_emoji_once(self):
+        with tempfile.TemporaryDirectory() as d:
+            rows = make_rows()
+            for r in rows:
+                if r.name == "waypoints":
+                    r.description = "🧭 Surfaces your open items"
+            app = make_app(d, rows=rows)
+            async def go():
+                async with app.run_test() as pilot:
+                    await pilot.pause()
+                    app.show_info_for("waypoints")
+                    return app.info_text()
+            text = run(go())
+            self.assertEqual(text.count("🧭"), 1, text)
+            self.assertIn("\nSurfaces your open items", text)
 
 
 # --- 5. info box: CSL's rounded frame, just above the buttons -----------------------

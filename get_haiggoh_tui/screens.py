@@ -75,6 +75,15 @@ def row_label(r, ticked: bool, mode: str | None = None, eligible: bool = True) -
     return Text(f"{box} {body}")
 
 
+# Menu rows lead in this order (user 2026-11-09); any other row with a menu follows in its
+# incoming (marketplace) order. sorted() is stable, so unnamed rows keep that order.
+LINK_ORDER = ("free-agents", "waypoints", "cost-tracker", "check-code")
+
+
+def _link_rank(r) -> int:
+    return LINK_ORDER.index(r.name) if r.name in LINK_ORDER else len(LINK_ORDER)
+
+
 _MODE_TITLE = {None: "Install and keep every haiggoh plugin up to date",
                "update": "⬆️ Update — pick what to update",
                "install": "📥 Install — pick what to install",
@@ -148,13 +157,15 @@ class MainScreen(Screen):
         for r in app.rows:
             if r.section not in sections:
                 sections.append(r.section)
-        for section in sections:
+        for section_index, section in enumerate(sections):
             title = "Claude Code plugins" if section == "plugin" else "Related tools"
+            if section_index:  # two empty rows set each later group apart (user 2026-11-09)
+                options += [Option("", id=f"gap:pre:{section}:{n}", disabled=True) for n in (1, 2)]
             options.append(Option(title, id=f"section:{section}", disabled=True))
             options.append(Option("", id=f"gap:head:{section}", disabled=True))  # user 2026-11-09
             rows = [r for r in app.rows if r.section == section]
             # items with an interactive menu first, a blank row, then the rest (user 2026-11-09)
-            links = [r for r in rows if r.menu]
+            links = sorted((r for r in rows if r.menu), key=_link_rank)
             rest = [r for r in rows if not r.menu]
             for group_index, group in enumerate((links, rest)):
                 if group_index == 1 and links and rest:
@@ -163,6 +174,10 @@ class MainScreen(Screen):
                     eligible = app.eligible(r) if app.mode else True
                     options.append(Option(row_label(r, r.name in app.ticks, app.mode, eligible),
                                           id=r.name, disabled=not eligible))
+        # actions after the repos, in their own group — CSL renders them "  Q) Quit"
+        # (session_picker.py:1737); quit is one in every mode (user 2026-11-09)
+        options.append(Option("", id="gap:actions", disabled=True))
+        options.append(Option(Text("  Q) Quit"), id="action:quit"))
         ol.nonlink_ids = set() if app.mode else {r.name for r in app.rows if not r.menu}
         ol.add_options(options)
         enabled = [i for i, o in enumerate(ol.options) if not o.disabled]
@@ -199,6 +214,9 @@ class MainScreen(Screen):
         # the focused OptionList owns the enter key (its "select" binding), so "open"
         # arrives here as OptionSelected on #rows
         if event.option_list.id != "rows":
+            return
+        if event.option.id == "action:quit":
+            self.action_quit()
             return
         if self.app.mode:
             self._run_mode()
