@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.10.0] — 2026-11-09
+
+### Added — 👨🏻‍💻 interactive TUI (CSL-style)
+
+- Bare `get-haiggoh` on a TTY now opens a Textual TUI (`bin/get-haiggoh-tui`, private
+  venv at `~/.local/share/get-haiggoh/tui-venv` with the CSL pin set, req-sha stamped
+  and rebuilt on pin change; any bootstrap failure prints one line and execs the plain
+  menu). `--check` reports venv state, `--plain` forces the menu, `--resume` consumes a
+  leftover pending bulk run exactly once. `bin/get-haiggoh-open-window` opens it in a
+  Terminal.app window from inside Claude Code (`/get-haiggoh` with no task).
+- The TUI lists all 16 haiggoh plugins + 4 related tools with Installed/Latest columns
+  and status (`✓` / newer version / `not installed` / `? unverified`), tick boxes with
+  select/unselect all, bulk Update/Install/Uninstall buttons, an info box (CSL `#info`
+  frame + hover-following list, ported from session_picker.py) and per-item menus on
+  Enter — menu-spec v1 (`docs/menu-spec.md`) when the installed version supports it,
+  legacy suspend-and-run otherwise, Back always last.
+- Pure-logic core in `get_haiggoh_tui/` (stdlib only; only app.py/screens.py import
+  Textual): inventory, status (cached paint = zero network), selection, routes,
+  brew gate, runner (ok from re-read state, never exit codes; self-update first +
+  pending/resume), menuspec. Catalog data in `catalog/`; `bin/catalog-parity.py` now
+  also fails when extras/marks lag the marketplace.
+
 ## [0.9.4] — 2026-11-03
 
 ### Changed — menu title in proper name (menu-restyle batch, user spec 2026-11-03)

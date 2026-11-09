@@ -1,0 +1,146 @@
+#!/usr/bin/env python3
+"""get-haiggoh-tui — bootstrap the private TUI venv and run the get-haiggoh TUI.
+
+Usage: get-haiggoh-tui [--help] [--check] [--resume] [--plain]
+
+  --help     show this help and exit (no side effects — it creates nothing)
+  --check    report venv state (path, req-sha match, textual importable); change nothing
+  --resume   consume a leftover pending bulk run exactly once
+  --plain    exec the plain numbered menu (get-haiggoh-menu) instead of the TUI
+
+Env:
+  GET_HAIGGOH_TUI_VENV          venv path (default ~/.local/share/get-haiggoh/tui-venv);
+                               a SET-but-invalid path aborts naming the variable
+  GET_HAIGGOH_TUI_STATE_FILE    TUI state file (default ~/.claude/.get-haiggoh-tui-state.json)
+  GET_HAIGGOH_TUI_PENDING_FILE  pending-run file (default ~/.claude/.get-haiggoh-tui-pending.json)
+  GET_HAIGGOH_MENU_SCRIPT       plain-menu override (used by tests)
+
+The venv is rebuilt when sha256(tui-requirements.txt) differs from <venv>/.req-sha.
+Any bootstrap failure prints ONE stderr line and execs the plain menu — setup never
+dead-ends.
+"""
+import hashlib
+import os
+import shutil
+import subprocess
+import sys
+
+HERE = os.path.dirname(os.path.realpath(__file__))
+ROOT = os.path.dirname(HERE)
+REQS = os.path.join(ROOT, "tui-requirements.txt")
+DEV_REQS = os.path.join(ROOT, "tui-dev-requirements.txt")
+DEFAULT_VENV = os.path.join(os.path.expanduser("~/.local/share"), "get-haiggoh", "tui-venv")
+STAMP = ".req-sha"
+
+
+def req_sha():
+    with open(REQS, "rb") as f:
+        return hashlib.sha256(f.read()).hexdigest()
+
+
+def venv_path():
+    v = os.environ.get("GET_HAIGGOH_TUI_VENV")
+    if v:
+        # a SET override that exists but is not a directory is invalid and aborts
+        # naming the variable; a not-yet-existing path is a build target and is fine
+        if os.path.exists(v) and not os.path.isdir(v):
+            sys.stderr.write(f"get-haiggoh-tui: GET_HAIGGOH_TUI_VENV={v!r} is not a directory\n")
+            raise SystemExit(2)
+        return v
+    return DEFAULT_VENV
+
+
+def venv_python(venv):
+    return os.path.join(venv, "bin", "python")
+
+
+def venv_ok(venv):
+    """True when the venv has a python and its req stamp matches tui-requirements.txt."""
+    if not os.path.isfile(venv_python(venv)):
+        return False
+    try:
+        with open(os.path.join(venv, STAMP), encoding="utf-8") as f:
+            return f.read().strip() == req_sha()
+    except OSError:
+        return False
+
+
+def _run(cmd):
+    r = subprocess.run(cmd, capture_output=True, text=True)
+    if r.returncode != 0:
+        raise RuntimeError(f"{' '.join(cmd[:3])}… exited {r.returncode}: "
+                           f"{(r.stderr or r.stdout).strip()[:200]}")
+
+
+def ensure_venv(venv):
+    """Create/refresh the private venv and install the pins; rewrite .req-sha.
+    uv when present, else python3 -m venv + pip. Raises RuntimeError on failure."""
+    if venv_ok(venv):
+        return
+    if not os.path.isdir(venv):
+        os.makedirs(venv, exist_ok=True)
+        uv = shutil.which("uv")
+        if uv:
+            _run([uv, "venv", venv])
+        else:
+            _run(["python3", "-m", "venv", venv])
+    py = venv_python(venv)
+    uv = shutil.which("uv")
+    if uv:
+        _run([uv, "pip", "install", "--python", py, "-r", REQS, "-r", DEV_REQS])
+    else:
+        _run([py, "-m", "pip", "install", "-r", REQS, "-r", DEV_REQS])
+    with open(os.path.join(venv, STAMP), "w", encoding="utf-8") as f:
+        f.write(req_sha() + "\n")
+
+
+def plain_menu():
+    menu = os.environ.get("GET_HAIGGOH_MENU_SCRIPT") or os.path.join(HERE, "get-haiggoh-menu")
+    os.execv(sys.executable, [sys.executable, menu])
+
+
+def check(venv):
+    ok = venv_ok(venv)
+    textual = ""
+    if ok:
+        r = subprocess.run([venv_python(venv), "-c", "import textual; print(textual.__version__)"],
+                           capture_output=True, text=True)
+        textual = r.stdout.strip() if r.returncode == 0 else f"IMPORT FAILED: {r.stderr.strip()[:120]}"
+    print(f"venv: {venv}")
+    print(f"req-sha matches tui-requirements.txt: {'yes' if ok else 'no'}")
+    print(f"textual: {textual or '(not checked — venv not ok)'}")
+    print("status: " + ("ok" if ok and textual and not textual.startswith("IMPORT") else "not ok"))
+    return 0 if (ok and textual and not textual.startswith("IMPORT")) else 1
+
+
+def main(argv):
+    if "--help" in argv or "-h" in argv:
+        print(__doc__.strip())
+        return 0
+    unknown = [a for a in argv if a not in ("--check", "--resume", "--plain")]
+    if unknown:
+        sys.stderr.write(f"usage: get-haiggoh-tui [--help] [--check] [--resume] [--plain] "
+                         f"(unrecognized: {' '.join(unknown)})\n")
+        return 2
+    if "--plain" in argv:
+        plain_menu()
+        return 0  # unreachable when exec works
+    venv = venv_path()  # exits 2 naming a set-but-invalid GET_HAIGGOH_TUI_VENV
+    if "--check" in argv:
+        return check(venv)
+    try:
+        ensure_venv(venv)
+    except Exception as exc:
+        sys.stderr.write(f"get-haiggoh: TUI unavailable ({exc}) — opening the plain menu\n")
+        plain_menu()
+        return 0
+    env = os.environ.copy()
+    env["PYTHONPATH"] = ROOT + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
+    extra = ["--resume"] if "--resume" in argv else []
+    os.execve(venv_python(venv),
+              [venv_python(venv), "-m", "get_haiggoh_tui", *extra], env)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))

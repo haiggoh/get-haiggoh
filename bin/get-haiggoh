@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
-"""get-haiggoh -- the command. No arguments on a terminal opens the interactive menu; anything
-else is handed to get-haiggoh.py unchanged (plan, apply, upgrade, shims, --help).
+"""get-haiggoh -- the command. No arguments on a terminal opens the interactive TUI
+(via bin/get-haiggoh-tui, which bootstraps the private venv and falls back to the plain
+menu on any failure); anything else is handed to get-haiggoh.py unchanged
+(plan, apply, upgrade, shims, --help).
 
-Env: GET_HAIGGOH_MENU_SCRIPT overrides the menu script (used by tests). See `get-haiggoh --help`
-for every other variable."""
+Env: GET_HAIGGOH_MENU_SCRIPT overrides the plain menu (used by tests);
+     GET_HAIGGOH_TUI_SCRIPT overrides the TUI bootstrap (used by tests).
+See `get-haiggoh --help` for every other variable."""
 import os
 import sys
 
@@ -18,8 +21,11 @@ def main(argv):
         print("get-haiggoh: the menu is interactive and needs a terminal. "
               "Try: get-haiggoh plan | apply | upgrade | shims   (or --help)", file=sys.stderr)
         return 2
-    menu = os.environ.get("GET_HAIGGOH_MENU_SCRIPT") or os.path.join(HERE, "get-haiggoh-menu")
-    os.execv(sys.executable, [sys.executable, menu])
+    menu = os.environ.get("GET_HAIGGOH_MENU_SCRIPT")
+    if menu:
+        os.execv(sys.executable, [sys.executable, menu])
+    tui = os.environ.get("GET_HAIGGOH_TUI_SCRIPT") or os.path.join(HERE, "get-haiggoh-tui")
+    os.execv(sys.executable, [sys.executable, tui])
 
 
 if __name__ == "__main__":

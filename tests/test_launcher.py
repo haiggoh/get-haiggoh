@@ -47,3 +47,21 @@ def test_help_passes_through(world):
     r = subprocess.run([sys.executable, LAUNCHER, "--help"], stdin=subprocess.DEVNULL,
                        capture_output=True, text=True, env=world.env(), timeout=15, check=False)
     assert r.returncode == 0 and "upgrade" in r.stdout
+
+
+def test_launcher_no_args_tty_runs_tui(world, tmp_path):
+    # bare run on a terminal opens the TUI bootstrap (GET_HAIGGOH_TUI_SCRIPT fakes it);
+    # the old GET_HAIGGOH_MENU_SCRIPT override still wins when set (see the menu test)
+    fake = tmp_path / "fake-tui"
+    fake.write_text("print('TUI-REACHED')\n")
+    env = world.env()
+    env["GET_HAIGGOH_TUI_SCRIPT"] = str(fake)
+    env.pop("GET_HAIGGOH_MENU_SCRIPT", None)
+    master, slave = pty.openpty()
+    try:
+        r = subprocess.run([sys.executable, LAUNCHER], stdin=slave, capture_output=True,
+                           text=True, env=env, timeout=15, check=False)
+    finally:
+        os.close(master)
+        os.close(slave)
+    assert r.returncode == 0 and "TUI-REACHED" in r.stdout

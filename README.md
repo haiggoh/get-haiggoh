@@ -27,8 +27,25 @@ never-brand list) live in [docs/branding.md](docs/branding.md).
 ./bin/get-haiggoh.py --help
 ```
 
-### Menu-Driven Usage
-For an interactive menu experience:
+### Interactive TUI (default on a terminal)
+A bare `get-haiggoh` on a terminal opens the CSL-style TUI (`bin/get-haiggoh-tui`
+bootstraps a private venv with pinned Textual and falls back to the plain menu on any
+failure; `get-haiggoh-tui --check` reports the venv state, `--plain` forces the menu):
+
+```bash
+get-haiggoh                 # opens the TUI on a TTY
+get-haiggoh-tui --check     # venv state, changes nothing
+```
+
+The TUI lists every haiggoh plugin and the related tools (transcript-distiller,
+human-shell, mac-claude-migration, mac-iphone-backup-cloudsync) with installed/latest
+status columns; tick rows with `space`, bulk `u` update / `i` install / `x` uninstall,
+`a`/`n` select/unselect all, `enter` opens the item's own menu, and an info box
+explains the highlighted item. From inside Claude Code, `/get-haiggoh` with no task
+runs `bin/get-haiggoh-open-window` to open the TUI in its own Terminal.app window.
+
+### Menu-Driven Usage (plain fallback)
+For the plain numbered menu directly:
 ```bash
 ./bin/get-haiggoh-menu
 ```

@@ -23,6 +23,17 @@ Installs/updates every published `haiggoh` Claude Code plugin from one place.
    surfacing that specific plugin for that specific reason, while still catching
    genuinely new plugins later.
 
+## Opening the TUI from inside Claude Code
+
+A `/get-haiggoh` with no task opens the interactive TUI — in its own Terminal.app
+window, because a TUI cannot run inside the chat: run
+`${CLAUDE_PLUGIN_ROOT}/bin/get-haiggoh-open-window` (it osascript-opens
+`bin/get-haiggoh`, which starts the TUI on a real terminal). The TUI lists every
+haiggoh plugin plus the related tools (transcript-distiller, human-shell,
+mac-claude-migration, mac-iphone-backup-cloudsync) with installed/latest status,
+bulk install/update/uninstall of ticked rows, and each item's own menu on Enter.
+`get-haiggoh-tui --plain` (or any bootstrap failure) falls back to the plain menu.
+
 ## What this can and cannot pull
 
 - **Every plugin resolves from its repository's DEFAULT branch**, and outdated-detection
