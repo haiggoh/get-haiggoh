@@ -1,0 +1,12 @@
+{
+  "menu_spec": 1,
+  "title": "bad",
+  "actions": [
+    {
+      "label": "Go",
+      "argv": ["tool", "run"],
+      "output": "panel",
+      "prompts": [{"id": "amount", "question": "?", "type": "text", "choices": null, "default": null, "pattern": null}]
+    }
+  ]
+}

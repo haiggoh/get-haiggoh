@@ -1,0 +1,7 @@
+{
+  "menu_spec": 1,
+  "title": "bad",
+  "actions": [
+    {"label": "Go", "argv": ["tool", "{amount}"], "output": "panel", "prompts": []}
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "menu_spec": 1,
+  "title": "💸 cost-tracker",
+  "actions": [
+    {
+      "label": "Set daily cap",
+      "argv": ["cost-tracker", "cap", "{amount}"],
+      "output": "panel",
+      "prompts": [
+        {
+          "id": "amount",
+          "question": "Daily cap in USD?",
+          "type": "choice",
+          "choices": [{"value": "20", "label": "$20"}, {"value": "40", "label": "$40"}],
+          "default": "40",
+          "pattern": null
+        }
+      ]
+    },
+    {"label": "Show today", "argv": ["cost-tracker", "today"], "output": "panel", "prompts": []},
+    {"label": "Full report (owns the terminal)", "argv": ["cost-tracker", "report"], "output": "terminal", "prompts": []}
+  ]
+}
