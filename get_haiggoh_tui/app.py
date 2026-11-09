@@ -20,7 +20,7 @@ from .inventory import Row
 from .menuspec import menu_for
 from .routes import SELF_NAME, brew_path, plan_steps
 from .runner import consume_pending, read_pending, run_steps, self_update_then_relaunch
-from .selection import default_ticks, is_first_run, mark_first_run_done
+from .selection import mark_first_run_done
 from .status import build_rows
 
 
@@ -37,6 +37,33 @@ def _pending_path() -> Path:
 _STATUS_TEXT = {"current": "✓", "missing": "not installed", "unverified": "? unverified"}
 
 
+# Stray `p` on Apple Terminal — PORTED from free-agents bin/session_picker_terminal.py
+# (CHANGELOG 0.22.0 "stray `p` on Apple Terminal (for real this time)"). Textual 3.7.1's
+# LinuxDriver sends the DECRQM query ESC[?2048$p unconditionally; Apple Terminal does not
+# consume it and prints the trailing `p`. (The 2026 query is already guarded upstream.)
+try:
+    from textual.drivers.linux_driver import LinuxDriver
+except ImportError:  # non-POSIX: Textual picks its own driver
+    LinuxDriver = None  # type: ignore[assignment,misc]
+
+if LinuxDriver is not None:
+    class AppleTerminalSafeDriver(LinuxDriver):  # type: ignore[misc,valid-type]
+        def _query_in_band_window_resize(self) -> None:
+            if os.environ.get("TERM_PROGRAM", "") == "Apple_Terminal":
+                return
+            super()._query_in_band_window_resize()
+else:
+    AppleTerminalSafeDriver = None  # type: ignore[assignment,misc]
+
+
+def get_driver_class():
+    """The safe driver on POSIX (it is a pass-through outside Apple Terminal), else None."""
+    return AppleTerminalSafeDriver
+
+
+MODES = ("update", "install", "uninstall")
+
+
 class GetHaiggohApp(App):
     """CSL-style TUI listing every haiggoh plugin and related tool."""
 
@@ -48,7 +75,10 @@ class GetHaiggohApp(App):
                  execv=None, suspend_fn=None):
         # CSL's current look (session_picker.py R5): textual-ansi theme + ANSI colours, so
         # no painted background — the terminal's own light/dark theme shows through
-        super().__init__(ansi_color=True)
+        # driver_class MUST go through __init__: Textual's App.__init__ assigns
+        # self.driver_class = driver_class or self.get_driver_class(), so a class attribute
+        # is overwritten (free-agents 786d487 shipped that and kept the stray `p`)
+        super().__init__(driver_class=get_driver_class(), ansi_color=True)
         self.theme = "textual-ansi"
         try:
             self.version = json.loads(
@@ -78,6 +108,9 @@ class GetHaiggohApp(App):
         self.refresh_failed = False
         self._info_name: str | None = None
         self._pending_op = "update"
+        # browse mode (None): no checkboxes, enter opens an item's menu. A mode in MODES:
+        # checkboxes on eligible rows, enter / the same key again runs it, esc/b leaves.
+        self.mode: str | None = None
 
     # --- lifecycle ---------------------------------------------------------
     def on_mount(self):
@@ -94,12 +127,51 @@ class GetHaiggohApp(App):
 
     def start_main(self):
         self.rows = list(self.rows_loader(True))  # instant paint from cache
-        first = is_first_run(self.state_path)
-        self.ticks = default_ticks(self.rows, first)
+        # ticks are chosen when a mode is entered (enter_mode), not at startup; a resumed
+        # pending run re-enters its own mode with its own names
+        resumed = set(self.ticks)
+        self.ticks = set()
         mark_first_run_done(self.state_path)  # after the first paint
         self.refresh_summary()
         self.push_screen(scr.MainScreen())
+        if resumed and self._pending_op in MODES:
+            self.enter_mode(self._pending_op, resumed)
         self._refresh_worker()
+
+    # --- modes ---------------------------------------------------------------
+    def eligible(self, r: Row, mode: str | None = None) -> bool:
+        mode = mode or self.mode
+        if mode == "update":
+            return r.status == "outdated"
+        if mode == "install":
+            return r.status == "missing"
+        if mode == "uninstall":
+            return r.status in ("current", "outdated", "unverified")
+        return False
+
+    def enter_mode(self, mode: str, ticks: set[str] | None = None):
+        """Update/install start with every eligible row ticked; uninstall starts empty
+        (destructive). A resumed run passes its own names."""
+        self.mode = mode
+        if ticks is not None:
+            self.ticks = {n for n in ticks if any(r.name == n for r in self.rows)}
+        elif mode == "uninstall":
+            self.ticks = set()
+        else:
+            self.ticks = {r.name for r in self.rows if self.eligible(r, mode)}
+        self._redraw_main()
+
+    def leave_mode(self):
+        self.mode = None
+        self.ticks = set()
+        self._redraw_main()
+
+    def _redraw_main(self):
+        screen = self.screen
+        if isinstance(screen, scr.MainScreen):
+            screen.apply_mode()
+            screen.rebuild_rows()
+            self.refresh_buttons()
 
     @work(exit_on_error=False, thread=True)
     def _refresh_worker(self):
@@ -151,7 +223,10 @@ class GetHaiggohApp(App):
         screen = self.screen
         if isinstance(screen, scr.MainScreen):
             from textual.widgets import Static
-            screen.query_one("#info", Static).update(self.info_text())
+            info = screen.query_one("#info", Static)
+            text = self.info_text()
+            info.update(text)
+            info.display = bool(text)  # CSL: no empty frame before the first highlight
 
     def info_text(self) -> str:
         r = next((x for x in self.rows if x.name == self._info_name), None)
@@ -173,10 +248,14 @@ class GetHaiggohApp(App):
         screen = self.screen
         if not isinstance(screen, scr.MainScreen):
             return
-        up = sum(1 for r in self.rows if r.name in self.ticks and r.status == "outdated")
-        ins = sum(1 for r in self.rows if r.name in self.ticks and r.status == "missing")
-        screen.query_one("#btn-update").label = f"Update {up}"
-        screen.query_one("#btn-install").label = f"Install {ins}"
+        def count(mode):
+            if self.mode == mode:  # in a mode: what is ticked
+                return sum(1 for r in self.rows if r.name in self.ticks and self.eligible(r, mode))
+            return sum(1 for r in self.rows if self.eligible(r, mode))  # browse: what is available
+        screen.query_one("#btn-update").label = f"Update {count('update')}"
+        screen.query_one("#btn-install").label = f"Install {count('install')}"
+        screen.query_one("#btn-uninstall").label = (
+            f"Uninstall {count('uninstall')}" if self.mode == "uninstall" else "Uninstall")
 
     # --- bulk operations -----------------------------------------------------
     def run_op(self, op: str):
@@ -192,6 +271,8 @@ class GetHaiggohApp(App):
         self._exec_steps(op, steps)
 
     def _exec_steps(self, op, steps):
+        self.mode = None  # the run starts: back to browse mode when the list comes back
+        self._redraw_main()
         if any(s.name == SELF_NAME for s in steps) and len(steps) > 1 and self.execv is not None:
             self_update_then_relaunch(steps, self.pending_path, execv=self.execv)
             return

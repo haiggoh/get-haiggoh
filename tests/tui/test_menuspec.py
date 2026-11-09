@@ -82,7 +82,7 @@ class MenuForTests(unittest.TestCase):
         menu = {"argv": ["tool"], "spec_min_version": "0.2.0", "return_to_min_version": None}
         r = row_with_menu("0.1.0", menu)
         ex = FakeExec(rc=0, out=json.dumps(load_fixture("menu-spec-valid.json")))
-        kind, payload = ms.menu_for(r, run=ex)
+        kind, payload = ms.menu_for(r, run=ex, which=lambda n: n)
         self.assertEqual(ex.calls, [], "ZERO probe calls below spec_min_version")
         self.assertEqual(kind, "legacy")
         self.assertEqual(payload, ["tool"])
@@ -91,7 +91,7 @@ class MenuForTests(unittest.TestCase):
         menu = {"argv": ["tool"], "spec_min_version": None, "return_to_min_version": None}
         r = row_with_menu("9.9.9", menu)
         ex = FakeExec(rc=0, out=json.dumps(load_fixture("menu-spec-valid.json")))
-        kind, _payload = ms.menu_for(r, run=ex)
+        kind, _payload = ms.menu_for(r, run=ex, which=lambda n: n)
         self.assertEqual(ex.calls, [])
         self.assertEqual(kind, "legacy")
 
@@ -99,7 +99,7 @@ class MenuForTests(unittest.TestCase):
         menu = {"argv": ["tool"], "spec_min_version": "0.2.0", "return_to_min_version": "0.3.0"}
         r = row_with_menu("0.2.5", menu)
         ex = FakeExec(rc=0, out=json.dumps(load_fixture("menu-spec-valid.json")))
-        kind, payload = ms.menu_for(r, run=ex)
+        kind, payload = ms.menu_for(r, run=ex, which=lambda n: n)
         self.assertEqual(kind, "spec")
         self.assertIsInstance(payload, dict)
         self.assertEqual(ex.calls, [["tool", "--menu-spec"]])
@@ -108,22 +108,22 @@ class MenuForTests(unittest.TestCase):
         menu = {"argv": ["tool"], "spec_min_version": "0.2.0", "return_to_min_version": None}
         r = row_with_menu("0.2.0", menu)
         ex = FakeExec(rc=0, out='{"menu_spec": 99}')
-        kind, payload = ms.menu_for(r, run=ex)
+        kind, payload = ms.menu_for(r, run=ex, which=lambda n: n)
         self.assertEqual(kind, "legacy")
         self.assertEqual(payload, ["tool"])
 
     def test_return_to_only_when_supported(self):
         menu = {"argv": ["tool"], "spec_min_version": None, "return_to_min_version": "0.3.0"}
         r = row_with_menu("0.3.1", menu)
-        _kind, payload = ms.menu_for(r, run=FakeExec())
+        _kind, payload = ms.menu_for(r, run=FakeExec(), which=lambda n: n)
         self.assertEqual(payload, ["tool", "--return-to", "get-haiggoh"])
         r_old = row_with_menu("0.2.9", menu)
-        _kind, payload_old = ms.menu_for(r_old, run=FakeExec())
+        _kind, payload_old = ms.menu_for(r_old, run=FakeExec(), which=lambda n: n)
         self.assertEqual(payload_old, ["tool"], "no --return-to below return_to_min_version")
 
     def test_no_menu_returns_none(self):
         r = row_with_menu("1.0.0", None)
-        self.assertEqual(ms.menu_for(r, run=FakeExec()), ("none", None))
+        self.assertEqual(ms.menu_for(r, run=FakeExec(), which=lambda n: n), ("none", None))
 
 
 class BackTests(unittest.TestCase):

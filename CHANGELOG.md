@@ -1,5 +1,65 @@
 # Changelog
 
+## [0.10.2] — 2026-11-09
+
+### Fixed — stray `p` on Apple Terminal; `⏳ loading ...` is the first thing on screen
+
+- The TUI passed no `driver_class`, so Textual 3.7.1's stock `LinuxDriver` sent the DECRQM
+  query `ESC[?2048$p`. Apple Terminal doesn't consume that query and prints its trailing
+  `p`. Fix ported from free-agents 0.22.0: `AppleTerminalSafeDriver` skips that query under
+  `TERM_PROGRAM=Apple_Terminal` and is passed through `App.__init__`, because a
+  class attribute gets overwritten there.
+- `bin/get-haiggoh-tui` now writes the loading frame first (ported from free-agents
+  0.22.1): it switches to the alternate screen, shows `⏳ loading ...` and hides the cursor,
+  then Textual takes over that screen without a flash. Only on a terminal: pipes and
+  `--help`/`--check` get no escape bytes. The plain-menu fallback restores the screen first.
+- Verified in a PTY run as Apple Terminal: neither `?2048$p` nor `?2026$p` is sent, and
+  the first bytes are the frame.
+
+### Fixed — item menus open from a real terminal instead of crashing
+
+- Catalog menu commands were bare names, which resolve only on Claude's Bash PATH. From
+  the user's own shell, `check-code.py` and `waypoints_menu.py` resolved nowhere, and the
+  TUI died with a `FileNotFoundError` traceback. `menu_for` now resolves `argv[0]` in this
+  order: the user's PATH, then the installed plugin's `<installPath>/bin/` and
+  `<installPath>/`. A script that isn't executable runs through `python3`/`sh` (the
+  plugin cache keeps `check-code.py` at mode 0644).
+- If nothing resolves, a warning names the command and the TUI stays up. An `OSError` from
+  the launched program is reported the same way, never as a traceback.
+- `mac-claude-migration`'s menu called `./backup.sh`, which only works from inside the
+  repo. It now calls `mac-claude-backup`, the name the brew formula installs.
+
+### Changed — browse mode and select modes (user 2026-11-09)
+
+- **Browse mode** (the default) has no checkboxes. Enter on an item with its own menu opens
+  that menu. Items without a menu are not links: Enter does nothing, and they turn grey
+  instead of cyan when highlighted or hovered. In each section, items with a menu come
+  first, then a blank row, then the rest.
+- **u / i / x** (or the Update / Install / Uninstall buttons) enter that mode. Every row
+  stays listed: rows that can't take part are greyed with no box, and the rest get
+  `[x]`/`[ ]`. Update and Install start with every eligible row ticked; Uninstall starts
+  with none. **Enter, or the same key again,** runs the mode. **Esc** or **b** goes back to
+  browse mode. Select all / Unselect all only appear inside a mode.
+- Fixed: Select all removed the boxes instead of filling them. Rows were markup strings,
+  and Rich parses `[x]` as a style tag and drops it. Rows are now plain `Text`.
+- ↑/↓ always move through the list, also after a button was clicked, and they skip
+  section headers and the blank row.
+
+### Changed — the info box gets CSL's rounded frame, right above the buttons
+
+- `#info` uses CSL's tooltip frame (`border: round ansi_bright_black`,
+  session_picker.py:801) and, as in CSL, is composed after the spacer, so it sits directly
+  on the button row. It stays hidden until there is text to show. 0.10.1 removed the grey
+  *painted* box; that stays removed (still no background).
+
+### Tests
+
+- `tests/tui/test_tui_0102.py` (24 tests): driver and DECRQM, the PTY frame, the pipe
+  staying clean, argv resolution, a notice instead of a crash, the modes, grouping, the
+  non-link style, arrow navigation, and the info box's frame and position. Pilot and
+  menuspec tests were updated to the mode contract. Full suite 278 passed, 0 skipped
+  (TUI venv). Six mutations, one per fix, each turn the suite red.
+
 ## [0.10.1] — 2026-11-09
 
 ### Changed — TUI theme aligned with CSL's current design (user 2026-11-09: "no grey box")

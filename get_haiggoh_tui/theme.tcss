@@ -8,8 +8,11 @@ Screen { layout: vertical; background: ansi_default; color: ansi_default; }
 #title { text-style: bold; padding: 0 1; }
 #subtitle { color: ansi_bright_cyan; padding: 0 1 1 1; }   /* CSL subheadline = cyan identity line */
 #rows { height: 1fr; margin-top: 1; }                        /* blank line before the list */
-#info { height: auto; border: none; padding: 0 1; margin: 1 1 0 1; color: ansi_default; }
-#spacer { height: 1fr; }                                     /* status pinned to the bottom */
+/* Info box = CSL's tooltip frame (session_picker.py:801): rounded grey border, sitting
+   directly on the button row (spacer before it, as CSL composes it). User 2026-11-09 —
+   this is CSL's round frame, not the old grey painted box that 0.10.1 removed. */
+#info { height: auto; display: none; border: round ansi_bright_black; padding: 0 1; margin: 0 1; color: ansi_default; }
+#spacer { height: 0; }                                       /* the list (1fr) takes the flex space */
 #buttons { height: auto; padding: 0 1; }
 #summary { color: ansi_bright_black; padding: 0 1; }
 #hint { color: ansi_black; text-style: italic; padding: 0 1; } /* version-style footer, very bottom */
@@ -19,5 +22,9 @@ OptionList { background: ansi_default; color: ansi_default; border: none; }
 OptionList:focus { background: ansi_default; color: ansi_default; border: none; }
 OptionList > .option-list--option-highlighted { background: ansi_default; color: ansi_bright_cyan; text-style: bold; }
 OptionList > .option-list--option-hover { background: ansi_default; color: ansi_bright_cyan; }
+/* rows with no menu are not links: highlight/hover turns them grey, never cyan */
+OptionList > .option-list--option-nonlink { background: ansi_default; color: ansi_bright_black; text-style: none; }
+/* select mode: rows that can't take part are greyed (disabled), boxes only on the rest */
+OptionList > .option-list--option-disabled { background: ansi_default; color: ansi_bright_black; }
 Input { background: ansi_default; color: ansi_default; border: round ansi_bright_black; } /* as CSL */
 Static { background: ansi_default; color: ansi_default; }

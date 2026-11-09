@@ -94,7 +94,34 @@ def ensure_venv(venv):
         f.write(req_sha() + "\n")
 
 
+# The FIRST thing on screen is the loading frame (PORTED from free-agents bin/session-picker,
+# CHANGELOG 0.22.1): the alternate screen hides whatever the shell printed, then
+# "⏳ loading ..." with the cursor hidden. Textual takes over the same alternate screen
+# without a flash. Only on a terminal — pipes, logs and --help/--check get no escape bytes.
+FRAME_ON = "\033[?1049h\033[2J\033[H\033[?25l  ⏳ loading ...  "
+FRAME_OFF = "\033[?25h\033[?1049l"
+_frame_shown = False
+
+
+def show_frame():
+    global _frame_shown
+    if sys.stdout.isatty():
+        sys.stdout.write(FRAME_ON)
+        sys.stdout.flush()
+        _frame_shown = True
+
+
+def hide_frame():
+    """Give the normal screen back before anything that is not Textual (plain menu, errors)."""
+    global _frame_shown
+    if _frame_shown:
+        sys.stdout.write(FRAME_OFF)
+        sys.stdout.flush()
+        _frame_shown = False
+
+
 def plain_menu():
+    hide_frame()
     menu = os.environ.get("GET_HAIGGOH_MENU_SCRIPT") or os.path.join(HERE, "get-haiggoh-menu")
     os.execv(sys.executable, [sys.executable, menu])
 
@@ -128,9 +155,11 @@ def main(argv):
     venv = venv_path()  # exits 2 naming a set-but-invalid GET_HAIGGOH_TUI_VENV
     if "--check" in argv:
         return check(venv)
+    show_frame()  # before the venv check: a rebuild can take a while
     try:
         ensure_venv(venv)
     except Exception as exc:
+        hide_frame()
         sys.stderr.write(f"get-haiggoh: TUI unavailable ({exc}) — opening the plain menu\n")
         plain_menu()
         return 0

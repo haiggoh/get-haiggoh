@@ -8,7 +8,9 @@ and write (measured shape: backup.sh reading --menu-spec as a dir).
 from __future__ import annotations
 
 import json
+import os
 import re
+import shutil
 import subprocess
 from typing import Literal
 
@@ -114,7 +116,50 @@ def build_argv(action: dict, answers: dict[str, str]) -> list[str]:
     return out
 
 
-def menu_for(row: Row, run=subprocess.run) -> tuple[Literal["spec", "legacy", "none"], dict | list[str] | None]:
+def _installed_plugins() -> dict:
+    c = _core()
+    try:
+        return c.load_installed(c.load_json(c.installed_plugins_path()))
+    except Exception:
+        return {}
+
+
+def resolve_argv(row: Row, argv: list[str], installed: dict | None = None,
+                 which=shutil.which) -> list[str] | None:
+    """Make argv[0] runnable from the USER's terminal. The catalog names commands as Claude
+    sees them, but a plugin's bin/ is only on Claude's Bash PATH (measured 2026-11-09:
+    check-code.py and waypoints_menu.py are on no login-shell PATH). Order: the user's PATH;
+    then, for a plugin row, <installPath>/bin/<name> and <installPath>/<name>. A found
+    script that is not executable (the plugin cache keeps check-code.py 0644) runs through
+    python3 for .py, sh for .sh. None when nothing resolves — the caller says so instead
+    of crashing on FileNotFoundError."""
+    if not argv:
+        return None
+    head, rest = argv[0], list(argv[1:])
+    if os.sep not in head:
+        found = which(head)
+        if found:
+            return [found, *rest]
+    elif os.path.isfile(head):
+        return list(argv)
+    if row.section == "plugin" and os.sep not in head:
+        if installed is None:
+            installed = _installed_plugins()
+        root = (installed.get(row.name) or {}).get("installPath")
+        for cand in ((os.path.join(root, "bin", head), os.path.join(root, head)) if root else ()):
+            if not os.path.isfile(cand):
+                continue
+            if os.access(cand, os.X_OK):
+                return [cand, *rest]
+            interp = {".py": "python3", ".sh": "sh"}.get(os.path.splitext(cand)[1])
+            interp_path = which(interp) if interp else None
+            if interp_path:
+                return [interp_path, cand, *rest]
+    return None
+
+
+def menu_for(row: Row, run=subprocess.run, installed: dict | None = None, which=shutil.which
+             ) -> tuple[Literal["spec", "legacy", "missing", "none"], dict | list[str] | str | None]:
     """('spec', spec) only when row.installed >= menu.spec_min_version (non-null) AND
     menu.argv + ['--menu-spec'] returns valid menu-spec JSON within 5 s; otherwise
     ('legacy', menu.argv + ['--return-to', 'get-haiggoh'] when installed >=
@@ -123,7 +168,11 @@ def menu_for(row: Row, run=subprocess.run) -> tuple[Literal["spec", "legacy", "n
     menu = row.menu
     if not menu:
         return ("none", None)
-    argv = list(menu.get("argv") or [])
+    raw = list(menu.get("argv") or [])
+    argv = resolve_argv(row, raw, installed=installed, which=which)
+    if argv is None:
+        return ("missing", f"{row.name}: can't find {raw[0] if raw else 'its menu command'} "
+                           "on PATH or in the installed plugin — try updating it")
     spec_min = menu.get("spec_min_version")
     return_min = menu.get("return_to_min_version")
     if spec_min is not None and _ge(row.installed, spec_min):

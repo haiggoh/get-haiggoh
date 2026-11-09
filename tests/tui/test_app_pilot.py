@@ -96,29 +96,29 @@ def run(coro):
 
 
 class PilotTests(unittest.TestCase):
-    def test_first_launch_ticks_missing_and_outdated(self):
+    def test_startup_is_browse_mode_with_no_ticks(self):
+        # 0.10.2 (user 2026-11-09): no checkboxes until a mode is entered; ticks are
+        # chosen per mode (test_tui_0102.ModeTests), never at startup
         with tempfile.TemporaryDirectory() as d:
             app = make_app(d)
             async def go():
                 async with app.run_test() as pilot:
                     await pilot.pause()
-                    return set(app.ticks)
-            ticks = run(go())
-            self.assertIn("waypoints", ticks)   # outdated
-            self.assertIn("cost-tracker", ticks)  # missing
-            self.assertIn("human-shell", ticks)   # missing tool
-            self.assertNotIn("get-haiggoh", ticks)  # current
+                    return app.mode, set(app.ticks)
+            mode, ticks = run(go())
+            self.assertIsNone(mode)
+            self.assertEqual(ticks, set())
             # first run marked done after first paint
             from get_haiggoh_tui.selection import is_first_run
             self.assertFalse(is_first_run(Path(d) / "state.json"))
 
-    def test_later_launch_ticks_only_outdated(self):
+    def test_update_mode_ticks_only_outdated(self):
         with tempfile.TemporaryDirectory() as d:
-            from get_haiggoh_tui.selection import mark_first_run_done
-            mark_first_run_done(Path(d) / "state.json")
             app = make_app(d)
             async def go():
                 async with app.run_test() as pilot:
+                    await pilot.pause()
+                    await pilot.press("u")
                     await pilot.pause()
                     return set(app.ticks)
             self.assertEqual(run(go()), {"waypoints"})
@@ -218,6 +218,7 @@ class PilotTests(unittest.TestCase):
             app = make_app(d)
             async def go():
                 async with app.run_test() as pilot:
+                    await pilot.press("i")  # enter install mode
                     await pilot.pause()
                     b = app.screen.query_one("#btn-install")
                     first = str(b.label)
@@ -236,7 +237,7 @@ class PilotTests(unittest.TestCase):
             async def go():
                 async with app.run_test() as pilot:
                     await pilot.pause()
-                    await pilot.press("i")
+                    await pilot.press("i", "i")  # enter install mode, then run it
                     await pilot.pause()
                     return type(app.screen).__name__
             self.assertEqual(run(go()), "BrewNoticeScreen")
@@ -245,7 +246,7 @@ class PilotTests(unittest.TestCase):
             async def go():
                 async with app.run_test() as pilot:
                     await pilot.pause()
-                    await pilot.press("i")
+                    await pilot.press("i", "i")  # enter install mode, then run it
                     await pilot.pause()
                     return type(app.screen).__name__
             self.assertNotEqual(run(go()), "BrewNoticeScreen")
@@ -256,7 +257,7 @@ class PilotTests(unittest.TestCase):
             async def go():
                 async with app.run_test() as pilot:
                     await pilot.pause()
-                    await pilot.press("i")
+                    await pilot.press("i", "i")  # enter install mode, then run it
                     await pilot.pause()
                     assert isinstance(app.screen, scr.BrewNoticeScreen)
                     await pilot.press("c")  # Continue without Homebrew
@@ -274,7 +275,7 @@ class PilotTests(unittest.TestCase):
             async def go():
                 async with app.run_test() as pilot:
                     await pilot.pause()
-                    await pilot.press("i")
+                    await pilot.press("i", "i")  # enter install mode, then run it
                     await pilot.pause()
                     await pilot.press("enter")  # Install Homebrew
                     await pilot.pause()
@@ -290,7 +291,9 @@ class PilotTests(unittest.TestCase):
             async def go():
                 async with app.run_test() as pilot:
                     await pilot.pause()
-                    await pilot.press("x")
+                    await pilot.press("x")  # uninstall mode starts unticked
+                    app.ticks = {"waypoints"}
+                    await pilot.press("x")  # run it -> confirm
                     await pilot.pause()
                     return type(app.screen).__name__, app.screen.confirm_text
             name, text = run(go())
@@ -304,6 +307,7 @@ class PilotTests(unittest.TestCase):
             async def go():
                 async with app.run_test() as pilot:
                     await pilot.pause()
+                    await pilot.press("x")
                     app.ticks = {"get-haiggoh"}
                     await pilot.press("x")
                     await pilot.pause()
@@ -366,12 +370,13 @@ class PilotTests(unittest.TestCase):
 
 class DesignTests(unittest.TestCase):
     def test_theme_matches_csl_current_design(self):
-        # user 2026-11-09: no grey tooltip box; CSL-current overall design
+        # user 2026-11-09: no grey PAINTED box (0.10.1); 0.10.2: CSL's rounded tooltip frame
         import re
         css = (ROOT / "get_haiggoh_tui" / "theme.tcss").read_text(encoding="utf-8")
         m = re.search(r"#info\s*\{([^}]*)\}", css)
         self.assertIsNotNone(m, "#info rule must exist")
-        self.assertIn("border: none", m.group(1), "the grey frame is gone")
+        self.assertIn("border: round ansi_bright_black", m.group(1), "CSL's rounded frame")
+        self.assertNotIn("background", m.group(1), "never a painted box")
         self.assertNotIn("ansi_bright_black", m.group(1).split("color")[-1] if "color" in m.group(1) else m.group(1))
         with tempfile.TemporaryDirectory() as d:
             app = make_app(d)

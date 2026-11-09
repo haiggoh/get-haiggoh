@@ -30,7 +30,7 @@
     "fallback": {"kind": "git"},
     "without_brew_loses": null,
     "version_cmd": null,
-    "menu": {"argv": ["./backup.sh"], "spec_min_version": null, "return_to_min_version": null}
+    "menu": {"argv": ["mac-claude-backup"], "spec_min_version": null, "return_to_min_version": null}
   },
   {
     "name": "mac-iphone-backup-cloudsync",
