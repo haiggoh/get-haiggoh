@@ -89,37 +89,45 @@ def _explain_if_sandboxed(*outputs):
     return True
 
 
-def _compute(only=None, category=None):
+def _compute(only=None, category=None, apply_skip=True, remote_versions=None):
+    """(missing, outdated, all_status). When `remote_versions` is given, NO network at all —
+    no manifest sweep and no `git ls-remote` tag check (the TUI's cached paint path passes the
+    day's cached versions; the default None keeps today's sweep-everything behaviour).
+    `apply_skip=False` disables skip-list filtering of the returned missing/outdated lists."""
+    did_sweep = remote_versions is None
     known = c.load_json(c.known_marketplaces_path())
     marketplace_path = c.resolve_marketplace_json_path(known, "haiggoh")
     catalog = c.load_marketplace_entries(c.load_json(marketplace_path)) if marketplace_path else []
     catalog = c.filter_catalog_by_selection(catalog, names=only, category=category)
     installed = c.load_installed(c.load_json(c.installed_plugins_path()))
 
-    # Parallel, bounded manifest sweep over installed catalog entries with a repo URL.
-    # Same pattern as hooks/check-installed.py:_fetch_remote_versions
-    # INCLUDE SELF_NAME (get-haiggoh) so it can update itself
-    targets = [(e["name"], c.entry_repo_url(e)) for e in catalog
-               if e.get("name") and e["name"] in installed
-               and c.entry_repo_url(e)]
-    remote_versions = {}
     diagnostics = {}
-    repo_urls = dict(targets)
-    if targets:
-        try:
-            from concurrent.futures import ThreadPoolExecutor
-            with ThreadPoolExecutor(max_workers=min(8, len(targets))) as ex:
-                for name, (version, diagnostic) in ex.map(
-                        lambda t: (t[0], _remote_plugin_version(t[1])), targets):
-                    remote_versions[name] = version
-                    if diagnostic:
-                        diagnostics[name] = diagnostic
-        except Exception:
-            pass
+    if did_sweep:
+        # Parallel, bounded manifest sweep over installed catalog entries with a repo URL.
+        # Same pattern as hooks/check-installed.py:_fetch_remote_versions
+        # INCLUDE SELF_NAME (get-haiggoh) so it can update itself
+        targets = [(e["name"], c.entry_repo_url(e)) for e in catalog
+                   if e.get("name") and e["name"] in installed
+                   and c.entry_repo_url(e)]
+        remote_versions = {}
+        repo_urls = dict(targets)
+        if targets:
+            try:
+                from concurrent.futures import ThreadPoolExecutor
+                with ThreadPoolExecutor(max_workers=min(8, len(targets))) as ex:
+                    for name, (version, diagnostic) in ex.map(
+                            lambda t: (t[0], _remote_plugin_version(t[1])), targets):
+                        remote_versions[name] = version
+                        if diagnostic:
+                            diagnostics[name] = diagnostic
+            except Exception:
+                pass
+    else:
+        repo_urls = {}
 
     missing = c.compute_missing(catalog, installed, SELF_NAME)
     outdated = c.compute_outdated(catalog, installed, remote_versions)
-    skip_list = c.load_skip_list()
+    skip_list = c.load_skip_list() if apply_skip else {}
     missing = c.filter_missing_by_skip(missing, skip_list)
     outdated = c.filter_outdated_by_skip(outdated, skip_list)
 
@@ -146,7 +154,7 @@ def _compute(only=None, category=None):
             # was not bumped (or the tag points at the wrong commit) — exactly the shape that
             # hid free-agents 0.33.0. (0.9.0)
             if (remote_ver and installed_ver and remote_ver == installed_ver
-                    and not _skip_remote_check()):
+                    and not _skip_remote_check() and did_sweep):
                 tag, tag_tuple = _latest_tag(repo_urls.get(name))
                 inst_tuple = c.tag_version_tuple(installed_ver)
                 if tag and tag_tuple and inst_tuple and tag_tuple > inst_tuple:
