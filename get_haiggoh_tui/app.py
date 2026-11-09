@@ -7,6 +7,7 @@ Paint comes from rows_loader(cached=True); a worker refreshes with cached=False.
 """
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 
@@ -45,7 +46,16 @@ class GetHaiggohApp(App):
                  pending_path=None, brew_present=None, resume=False, menu_for=menu_for,
                  legacy_runner=None, installer_runner=None, verify_installed=None,
                  execv=None, suspend_fn=None):
-        super().__init__()
+        # CSL's current look (session_picker.py R5): textual-ansi theme + ANSI colours, so
+        # no painted background — the terminal's own light/dark theme shows through
+        super().__init__(ansi_color=True)
+        self.theme = "textual-ansi"
+        try:
+            self.version = json.loads(
+                (Path(__file__).resolve().parents[1] / ".claude-plugin" / "plugin.json")
+                .read_text(encoding="utf-8"))["version"]
+        except Exception:
+            self.version = "?"
         # suspend_fn: the App.suspend() context manager (headless tests inject a fake)
         self.suspend_fn = suspend_fn or self.suspend
         self.rows_loader = rows_loader

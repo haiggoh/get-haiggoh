@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.10.1] — 2026-11-09
+
+### Changed — TUI theme aligned with CSL's current design (user 2026-11-09: "no grey box")
+
+- The info box loses its grey tooltip frame (`border: none`) and the app runs the
+  `textual-ansi` theme with `ansi_color` — no painted background, so light/dark/custom
+  terminal themes show through. Bold title, cyan subheadline, cyan highlight/hover,
+  grey status line and an italic dim version footer pinned at the very bottom, matching
+  the current session picker (free-agents/bin/session_picker.py, R5/R9).
+
 ## [0.10.0] — 2026-11-09
 
 ### Added — 👨🏻‍💻 interactive TUI (CSL-style)

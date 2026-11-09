@@ -364,6 +364,21 @@ class PilotTests(unittest.TestCase):
             self.assertEqual(screen.actions[-1]["label"], BACK_LABEL)
 
 
+class DesignTests(unittest.TestCase):
+    def test_theme_matches_csl_current_design(self):
+        # user 2026-11-09: no grey tooltip box; CSL-current overall design
+        import re
+        css = (ROOT / "get_haiggoh_tui" / "theme.tcss").read_text(encoding="utf-8")
+        m = re.search(r"#info\s*\{([^}]*)\}", css)
+        self.assertIsNotNone(m, "#info rule must exist")
+        self.assertIn("border: none", m.group(1), "the grey frame is gone")
+        self.assertNotIn("ansi_bright_black", m.group(1).split("color")[-1] if "color" in m.group(1) else m.group(1))
+        with tempfile.TemporaryDirectory() as d:
+            app = make_app(d)
+            self.assertEqual(app.theme, "textual-ansi")
+            self.assertTrue(app.ansi_color)
+
+
 class _Suspend:
     def __init__(self, log):
         self.log = log

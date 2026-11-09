@@ -61,17 +61,18 @@ class MainScreen(Screen):
         app = self.app
         yield Static("👨🏻‍💻 Get Haiggoh", id="title")
         yield Static("Install and keep every haiggoh plugin up to date", id="subtitle")
-        yield Static(app.summary, id="summary")
         yield HoverOptionList(id="rows")
         yield Static("", id="info")
+        yield Static("", id="spacer")
         with Horizontal(id="buttons"):
             yield Button("Select all", id="btn-all")
             yield Button("Unselect all", id="btn-none")
             yield Button("Update 0", id="btn-update")
             yield Button("Install 0", id="btn-install")
             yield Button("Uninstall", id="btn-uninstall")
+        yield Static(app.summary, id="summary")
         yield Static("space tick · enter open · a all · n none · u update · i install · "
-                     "x uninstall · q quit", id="hint")
+                     f"x uninstall · q quit · get-haiggoh {app.version}", id="hint")
 
     def on_mount(self):
         self.rebuild_rows()

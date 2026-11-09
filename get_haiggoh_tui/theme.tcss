@@ -1,14 +1,23 @@
-/* get-haiggoh TUI theme — CSL family look.
-   Ported from free-agents/bin/session_picker.py:801 (#info frame) and :815-820
-   (OptionList highlight/hover rules): same ANSI palette, cyan ❯ cursor. */
-Screen { background: ansi_default; }
-#title { text-style: bold; padding: 1 1 0 1; }
-#subtitle { color: ansi_bright_black; padding: 0 1; }
-#summary { color: ansi_bright_black; padding: 0 1; }
-#rows { height: 1fr; }
-#info { height: auto; border: round ansi_bright_black; padding: 0 1; margin: 0 1; color: ansi_default; }
-#hint { color: ansi_bright_black; padding: 0 1; }
+/* get-haiggoh TUI theme — aligned with CSL's CURRENT overall design
+   (free-agents/bin/session_picker.py, R5/R9 era): textual-ansi theme with ansi_color
+   (no painted background — light/dark/custom terminal themes show through), bold title,
+   CYAN subheadline, cyan highlight/hover, grey status line and an italic dim footer pinned
+   at the very bottom. The grey tooltip frame around #info is GONE (user 2026-11-09:
+   "doesn't need the grey box which looks bad"). */
+Screen { layout: vertical; background: ansi_default; color: ansi_default; }
+#title { text-style: bold; padding: 0 1; }
+#subtitle { color: ansi_bright_cyan; padding: 0 1 1 1; }   /* CSL subheadline = cyan identity line */
+#rows { height: 1fr; margin-top: 1; }                        /* blank line before the list */
+#info { height: auto; border: none; padding: 0 1; margin: 1 1 0 1; color: ansi_default; }
+#spacer { height: 1fr; }                                     /* status pinned to the bottom */
 #buttons { height: auto; padding: 0 1; }
+#summary { color: ansi_bright_black; padding: 0 1; }
+#hint { color: ansi_black; text-style: italic; padding: 0 1; } /* version-style footer, very bottom */
+Button { border: none; padding: 0 1; min-width: 8; }
+Button:focus, Button:hover { color: ansi_bright_cyan; text-style: bold; }
+OptionList { background: ansi_default; color: ansi_default; border: none; }
+OptionList:focus { background: ansi_default; color: ansi_default; border: none; }
 OptionList > .option-list--option-highlighted { background: ansi_default; color: ansi_bright_cyan; text-style: bold; }
 OptionList > .option-list--option-hover { background: ansi_default; color: ansi_bright_cyan; }
-Button { min-width: 8; }
+Input { background: ansi_default; color: ansi_default; border: round ansi_bright_black; } /* as CSL */
+Static { background: ansi_default; color: ansi_default; }
