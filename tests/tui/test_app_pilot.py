@@ -123,6 +123,42 @@ class PilotTests(unittest.TestCase):
                     return set(app.ticks)
             self.assertEqual(run(go()), {"waypoints"})
 
+    def test_row_label_has_mark_name_installed_status(self):
+        with tempfile.TemporaryDirectory() as d:
+            app = make_app(d)
+            async def go():
+                async with app.run_test() as pilot:
+                    await pilot.pause()
+                    ol = app.screen.query_one("#rows")
+                    idx = next(i for i in range(ol.option_count)
+                               if "free-agents" in str(ol.get_option_at_index(i).prompt))
+                    label = str(ol.get_option_at_index(idx).prompt)
+                    app.show_info_for("free-agents")
+                    await pilot.pause()
+                    return label, app.info_text()
+            label, info = run(go())
+            self.assertIn("📡🦾", label)          # brand mark in the row
+            self.assertIn("free-agents", label)
+            self.assertIn("0.55.7", label)         # installed column
+            self.assertIn("? unverified", label)   # status column
+            self.assertTrue(info.startswith("📡🦾 free-agents"), info)
+
+    def test_refresh_failure_shows_in_summary_not_crash(self):
+        with tempfile.TemporaryDirectory() as d:
+            def loader(cached):
+                if cached:
+                    return make_rows()
+                raise RuntimeError("network down")
+            app = make_app(d)
+            app.rows_loader = loader
+            async def go():
+                async with app.run_test() as pilot:
+                    await pilot.pause()
+                    await pilot.pause()
+                    return app.summary
+            s = run(go())
+            self.assertIn("couldn't check for updates", s)
+
     def test_summary_counts(self):
         with tempfile.TemporaryDirectory() as d:
             app = make_app(d)

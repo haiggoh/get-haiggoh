@@ -155,6 +155,21 @@ class ToolStatusTests(unittest.TestCase):
 
 
 class BuildRowsTests(unittest.TestCase):
+    def test_tool_diagnostic_is_unverified_never_current(self):
+        # a failed latest-fetch must render ? unverified, never ✓ (Review Focus 2)
+        with tempfile.TemporaryDirectory() as d:
+            env = _world(Path(d), installed={"get-haiggoh": "0.9.4"})
+            with mock.patch.dict(os.environ, env):
+                with mock.patch.object(c, "fetch_url", _boom), \
+                     mock.patch.object(st, "tool_status",
+                                       lambda tool: ("1.0.0", None, {"problem": "fetch failed"})):
+                    rows = st.build_rows(cached=False)
+            tools = [r for r in rows if r.section == "tool"]
+            self.assertTrue(tools)
+            for r in tools:
+                self.assertEqual(r.status, "unverified", r.name)
+                self.assertIsNotNone(r.diagnostic)
+
     def test_self_row_first(self):
         with tempfile.TemporaryDirectory() as d:
             env = _world(Path(d), installed={"get-haiggoh": "0.9.4", "waypoints": "0.14.3"})

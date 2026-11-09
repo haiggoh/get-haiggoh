@@ -68,6 +68,8 @@ class PlanStepsTests(unittest.TestCase):
         self.assertEqual(steps[0].op, "update")
 
     def test_bulk_uninstall_excludes_self(self):
+        # self IS ticked here — the exclusion must come from plan_steps, not the test
+        # (a mutant that drops the SELF_NAME filter turns this RED)
         rows = [row("get-haiggoh", "current"), row("b", "outdated"), row("c", "missing")]
         steps = plan_steps(rows, {"get-haiggoh", "b", "c"}, "uninstall",
                            brew_present=True, brew_allowed=False)
