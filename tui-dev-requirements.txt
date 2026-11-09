@@ -1,0 +1,3 @@
+# Dev-only pins for the TUI venv (pilot tests). Not needed at runtime.
+pytest
+pytest-asyncio

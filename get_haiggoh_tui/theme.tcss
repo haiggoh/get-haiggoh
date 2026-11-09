@@ -1,0 +1,14 @@
+/* get-haiggoh TUI theme — CSL family look.
+   Ported from free-agents/bin/session_picker.py:801 (#info frame) and :815-820
+   (OptionList highlight/hover rules): same ANSI palette, cyan ❯ cursor. */
+Screen { background: ansi_default; }
+#title { text-style: bold; padding: 1 1 0 1; }
+#subtitle { color: ansi_bright_black; padding: 0 1; }
+#summary { color: ansi_bright_black; padding: 0 1; }
+#rows { height: 1fr; }
+#info { height: auto; border: round ansi_bright_black; padding: 0 1; margin: 0 1; color: ansi_default; }
+#hint { color: ansi_bright_black; padding: 0 1; }
+#buttons { height: auto; padding: 0 1; }
+OptionList > .option-list--option-highlighted { background: ansi_default; color: ansi_bright_cyan; text-style: bold; }
+OptionList > .option-list--option-hover { background: ansi_default; color: ansi_bright_cyan; }
+Button { min-width: 8; }

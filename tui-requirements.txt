@@ -1,0 +1,15 @@
+# get-haiggoh TUI private-venv pins — copied VERBATIM from the CSL pin set
+# free-agents/install/session-picker-requirements.txt (confirmed live 2026-11-09:
+# textual==3.7.1, rich==15.0.0, …) so the TUI and CSL render identically.
+# Installed ONLY into the private venv (default ~/.local/share/get-haiggoh/tui-venv,
+# env GET_HAIGGOH_TUI_VENV) — never a global Python.
+textual==3.7.1
+rich==15.0.0
+linkify-it-py==2.2.0
+markdown-it-py==4.2.0
+mdit-py-plugins==0.6.1
+mdurl==0.1.2
+platformdirs==4.12.2
+pygments==2.21.0
+typing-extensions==4.16.0
+truststore==0.10.5
