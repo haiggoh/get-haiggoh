@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.10.4] — 2026-11-13
+
+### Fixed — run-to-completion catalog description matches its plugin.json
+
+- The marketplace entry for run-to-completion still carried the pre-1.1 description and omitted
+  the `/ship` and `/ship-config` skills, so `bin/catalog-parity.py` exited 1 with
+  `MISMATCH: run-to-completion`. Synced to the plugin's own description (user-approved
+  2026-11-13, recorded in ~/.claude/plans/2026-10-31-approved-plugin-descriptions.json);
+  parity now reports all entries matching (exit 0). Rebased onto 0.10.3 and re-versioned
+  0.10.4 (the 0.10.3 tag was taken by the desktop-sync menu entry).
+
 ## [0.10.3] — 2026-11-13
 
 ### Added — claude-code-desktop-sync's menu is reachable from get-haiggoh
