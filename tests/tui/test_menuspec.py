@@ -135,5 +135,50 @@ class BackTests(unittest.TestCase):
         self.assertEqual(ms.BACK_LABEL, "👨🏻‍💻 Back to Get Haiggoh")
 
 
+CDS_SRC = Path(__import__("os").environ.get(
+    "CDS_SRC", str(Path.home() / "ClaudeWorkspace" / "claude-code-desktop-sync")))
+
+
+class DesktopSyncCatalogEntry(unittest.TestCase):
+    """0.10.3: claude-code-desktop-sync 2.0.1 has a menu (`desktop-sync`). 2.0.0 answered
+    `--menu-spec` with rc 2, so it must NEVER be probed; 2.0.1+ is."""
+
+    def entry(self):
+        extras = json.loads((ROOT / "catalog" / "plugin-extras.json").read_text(encoding="utf-8"))
+        return extras["claude-code-desktop-sync"]["menu"]
+
+    def test_entry_shape(self):
+        self.assertEqual(self.entry(), {"argv": ["desktop-sync"], "spec_min_version": "2.0.1",
+                                        "return_to_min_version": "2.0.1"})
+
+    def test_2_0_0_is_never_probed(self):
+        ex = FakeExec(rc=0, out=json.dumps(load_fixture("menu-spec-valid.json")))
+        kind, payload = ms.menu_for(row_with_menu("2.0.0", self.entry()), run=ex,
+                                    which=lambda n: n)
+        self.assertEqual(ex.calls, [], "2.0.0 rejects --menu-spec: zero probe calls")
+        self.assertEqual((kind, payload), ("legacy", ["desktop-sync"]))
+
+    def test_2_0_1_probes_menu_spec_flag(self):
+        ex = FakeExec(rc=0, out=json.dumps(load_fixture("menu-spec-valid.json")))
+        kind, _payload = ms.menu_for(row_with_menu("2.0.1", self.entry()), run=ex,
+                                     which=lambda n: n)
+        self.assertEqual(kind, "spec")
+        self.assertEqual(ex.calls, [["desktop-sync", "--menu-spec"]])
+
+    def test_real_producer_spec_validates(self):
+        # The REAL desktop-sync answers the probe with a spec OUR validator accepts. Skips loudly
+        # without a claude-code-desktop-sync checkout at >= 2.0.1 (set CDS_SRC).
+        exe = CDS_SRC / "bin" / "desktop-sync"
+        if not exe.is_file():
+            self.skipTest("no claude-code-desktop-sync checkout at %s (set CDS_SRC)" % CDS_SRC)
+        import subprocess
+        r = subprocess.run([sys.executable, str(exe), "--menu-spec"], capture_output=True,
+                           text=True, timeout=30)
+        if r.returncode == 2 and "unknown command" in r.stderr:
+            self.skipTest("checkout at %s predates 2.0.1 (no --menu-spec flag)" % CDS_SRC)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(ms.validate(json.loads(r.stdout)), [])
+
+
 if __name__ == "__main__":
     unittest.main()

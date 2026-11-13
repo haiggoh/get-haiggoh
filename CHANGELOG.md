@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.10.3] — 2026-11-13
+
+### Added — claude-code-desktop-sync's menu is reachable from get-haiggoh
+- Catalog entry `claude-code-desktop-sync` now declares `"menu": {"argv": ["desktop-sync"],
+  "spec_min_version": "2.0.1", "return_to_min_version": "2.0.1"}` and lists the new CLI + menu
+  in "adds". 2.0.0 answered `--menu-spec` with rc 2, so below 2.0.1 it is never probed (pinned).
+- `tests/tui/test_menuspec.py::DesktopSyncCatalogEntry` pins the entry, the no-probe gate, the
+  `--menu-spec` probe argv, and validates the REAL producer's spec with this repo's validator
+  (skips loudly without a ≥ 2.0.1 checkout; `CDS_SRC` points at one).
+
 ## [0.10.2] — 2026-11-09
 
 ### Fixed — stray `p` on Apple Terminal; `⏳ loading ...` is the first thing on screen

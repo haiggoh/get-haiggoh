@@ -1,6 +1,6 @@
 {
   "name": "get-haiggoh",
-  "version": "0.10.2",
+  "version": "0.10.3",
   "description": "👨🏻‍💻 Manage, install, and update haiggoh plugins for Claude Code via direct CLI commands or an interactive menu. Preview updates with dry-run plans, filter actions by plugin name or category, and automatically create PATH shortcuts so installed plugin tools run directly from your shell. Verifies installed versions against remote repositories and manages launchers on session start.",
   "author": {
     "name": "Heiko Brantsch"

@@ -1,5 +1,5 @@
 {
-  "claude-code-desktop-sync": {"adds": "1 skill · SessionStart hook · sync_code_desktop.py CLI"},
+  "claude-code-desktop-sync": {"adds": "1 skill · SessionStart hook · desktop-sync CLI + menu · sync_code_desktop.py engine", "menu": {"argv": ["desktop-sync"], "spec_min_version": "2.0.1", "return_to_min_version": "2.0.1"}},
   "no-hidden-changes": {"adds": "1 skill · SessionStart hook"},
   "summon-skills": {"adds": "1 skill · SessionStart + UserPromptSubmit hooks · summon-skills.py CLI"},
   "check-code": {"adds": "1 skill · PostToolUse hook · check-code.py CLI", "menu": {"argv": ["check-code.py", "setup"], "spec_min_version": null, "return_to_min_version": null}},
