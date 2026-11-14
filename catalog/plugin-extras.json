@@ -13,6 +13,6 @@
   "brief-agents": {"adds": "1 skill · SessionStart + PreToolUse hooks · brief-agents.py CLI"},
   "free-agents": {"adds": "9 skills · 8 hooks (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, Stop, StopFailure, SessionEnd, PostCompact) · csl / lowkey / free-agent-tool.py CLIs", "formula": "haiggoh/tap/free-agents", "menu": {"argv": ["csl"], "spec_min_version": null, "return_to_min_version": null}},
   "cost-tracker": {"adds": "1 skill · SessionEnd hook · cost-tracker CLI · /cost-today command", "menu": {"argv": ["cost-tracker"], "spec_min_version": null, "return_to_min_version": null}},
-  "lasting-plans": {"adds": "1 skill · SessionStart hook · lasting-plans CLI", "menu": {"argv": ["lasting-plans"], "spec_min_version": null, "return_to_min_version": null}},
+  "lasting-plans": {"adds": "2 skills · SessionStart hook · lasting-plans CLI", "menu": {"argv": ["lasting-plans"], "spec_min_version": null, "return_to_min_version": null}},
   "watch-your-step": {"adds": "1 skill · SessionStart + PreToolUse hooks · watch-your-step.py CLI"}
 }

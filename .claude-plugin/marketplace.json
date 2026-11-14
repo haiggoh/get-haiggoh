@@ -106,7 +106,7 @@
     {
       "name": "lasting-plans",
       "source": { "source": "url", "url": "https://github.com/haiggoh/lasting-plans.git" },
-      "description": "\ud83d\udcdc Keeps every Claude Code plan and playbook in local, Git-versioned archives (~/Claude-plans, ~/Claude-playbooks), out of reach of the cleanup that deletes old plans. It imports existing files, watches for changes on macOS, keeps the archive copy when a source disappears, and records creation dates, Finder tags and labels. A CLI searches, shows history and restores; a remote backup is optional.",
+      "description": "📜 Plans that last — kept safe AND made dependable: keeps every Claude Code plan and playbook in local, Git-versioned archives (~/Claude-plans, ~/Claude-playbooks), out of reach of the cleanup that deletes old plans; and hardens the plans themselves with plan-airtight, the execution-safety layer (authority matrix, forced Phase 0 preflight, receipts with known-bad checks, side-effect classification, adversarial review) for any plan another executor will run. Imports existing files, watches for changes on macOS, keeps the archive copy when a source disappears, and records creation dates, Finder tags and labels. A CLI searches, shows history and restores; a remote backup is optional.",
       "category": "productivity",
       "tags": ["plans", "playbooks", "backup", "git", "retention", "launchd"]
     },
