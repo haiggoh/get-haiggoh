@@ -1,0 +1,36 @@
+#!/usr/bin/env python3
+"""get-haiggoh-open-window — open the get-haiggoh TUI in its own Terminal.app window.
+
+A TUI cannot run inside the chat, so from inside Claude Code a bare /get-haiggoh runs
+this: it asks Terminal.app (via osascript) to `do script` the absolute bin/get-haiggoh.
+
+Usage: get-haiggoh-open-window [--help]
+Exit 0 = window opened · 1 = osascript failed · 2 = bad args
+"""
+import os
+import subprocess
+import sys
+
+HERE = os.path.dirname(os.path.realpath(__file__))
+
+
+def main(argv):
+    if "--help" in argv or "-h" in argv:
+        print(__doc__.strip())
+        return 0
+    if argv:
+        sys.stderr.write(f"get-haiggoh-open-window: unexpected argument: {argv[0]} "
+                         f"(try --help)\n")
+        return 2
+    target = os.path.join(HERE, "get-haiggoh")
+    r = subprocess.run(
+        ["osascript", "-e", f'tell application "Terminal" to do script "{target}"'],
+        capture_output=True, text=True)
+    if r.returncode != 0:
+        sys.stderr.write(f"get-haiggoh-open-window: osascript failed: {r.stderr.strip()}\n")
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))

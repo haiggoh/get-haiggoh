@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.10.5] — 2026-11-15
+
+### Added — Wave D: committed portable package (COORDINATION C1/C2)
+
+- New `scripts/build-portable.py` (from the reviewed pilot pattern) generates the committed
+  `portable/` package: same-name manifest, the account-guide skill (this plugin's bin/ refs
+  rewritten to scripts/, soft), the SessionStart hook, the six manager scripts at `scripts/`
+  (byte-identical from bin/), and `get_haiggoh_core.py` at the portable ROOT (the scripts
+  resolve it as dirname(dirname(__file__))). The manager itself is host-only (claude plugin,
+  TUI/osascript) — components say `code: true` only; in Chat/Cowork the skill is the guide.
+  The catalog/marketplace data stays user-level (read from the installed marketplace clone).
+  Emits PORTABLE-BUILD.json + deterministic dist zip.
+- tests pin freshness, same-name manifest, no bin/, the byte-identical move + doc rewrite,
+  closure, C2 schema, zip, and a functional check that the portable manager prints its help
+  from the portable root.
+
 ## [0.10.4] — 2026-11-13
 
 ### Fixed — run-to-completion catalog description matches its plugin.json

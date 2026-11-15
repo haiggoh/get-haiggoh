@@ -1,0 +1,95 @@
+{
+  "builder": "scripts/build-portable.py",
+  "builder_version": "1.0.0",
+  "components": [
+    {
+      "adaptation_class": "mechanical",
+      "evidence_level": "source-inspected",
+      "kind": "manifest",
+      "notes": "same name+version as the host manifest; an installed marketplace plugin wins over a synced copy in Code, so no double-run",
+      "path": ".claude-plugin/plugin.json",
+      "surfaces": {
+        "chat": true,
+        "code": true,
+        "cowork": true
+      }
+    },
+    {
+      "adaptation_class": "mechanical",
+      "evidence_level": "source-inspected",
+      "kind": "skill",
+      "notes": "the account guide: scopes/synced identities/versions explained; host-admin command refs rewritten to scripts/; TUI/window paths noted host-only",
+      "path": "skills/get-haiggoh/SKILL.md",
+      "surfaces": {
+        "chat": true,
+        "code": true,
+        "cowork": true
+      }
+    },
+    {
+      "adaptation_class": "native-unchanged",
+      "evidence_level": "source-inspected",
+      "kind": "hooks",
+      "notes": "SessionStart check-installed hook; hooks/ stays",
+      "path": "hooks/hooks.json",
+      "surfaces": {
+        "chat": false,
+        "code": true,
+        "cowork": true
+      }
+    },
+    {
+      "adaptation_class": "native-unchanged",
+      "evidence_level": "source-inspected",
+      "kind": "hook-script",
+      "notes": "reads installed_plugins.json (user-level data) \u2014 portable as-is",
+      "path": "hooks/check-installed.py",
+      "surfaces": {
+        "chat": false,
+        "code": true,
+        "cowork": true
+      }
+    },
+    {
+      "adaptation_class": "mechanical",
+      "evidence_level": "source-inspected",
+      "kind": "script",
+      "notes": "the host manager: install/update via claude plugin, TUI on a real terminal, osascript window \u2014 host-only (Code tab); in Chat/Cowork the skill is the guide",
+      "path": "scripts/",
+      "surfaces": {
+        "chat": false,
+        "code": true,
+        "cowork": false
+      }
+    },
+    {
+      "adaptation_class": "native-unchanged",
+      "evidence_level": "source-inspected",
+      "kind": "library",
+      "notes": "core at the portable root; the scripts resolve it as dirname(dirname(__file__))",
+      "path": "get_haiggoh_core.py",
+      "surfaces": {
+        "chat": false,
+        "code": true,
+        "cowork": false
+      }
+    }
+  ],
+  "files": {
+    ".claude-plugin/plugin.json": "a8f3ea7ea6d89b82c5ec18f72e9cfb25a85ccd9dedeefdd882a6a0dbdb18f79a",
+    "get_haiggoh_core.py": "414a3aa36626f5b0384f8027d2416e2833ef81178a098ddfe2af06992ac819e0",
+    "hooks/check-installed.py": "e9dffb360de09769785acc246f829a2b43fcd78c9af00273c7f751880e759b86",
+    "hooks/hooks.json": "d045bbf19f6bc345c156d373c9e182ac80228017d84eaf1ec8991000044039c0",
+    "scripts/catalog-parity.py": "d7a4cbd43b62141ced1fea349cddb5ea26d8fd26931368db8476c102659eaacd",
+    "scripts/get-haiggoh": "bf3b4bab01c0fc83c3e5d54f0947d1dc42847d5d3812eecf24d74b0dd1ad50d5",
+    "scripts/get-haiggoh-menu": "d350d480b295c389a009446d1a39b530da31785cc07fe3685ec2b4ca622efed9",
+    "scripts/get-haiggoh-open-window": "11d9b91fd4b7fd95a9e0e3e10124dff10c7d30612cbe4bf22839f4d2e7f4643a",
+    "scripts/get-haiggoh-tui": "651d5f50a74e0efb6d42058f6896b8b70d71fdf45adcbd8c51371423d59b20ed",
+    "scripts/get-haiggoh.py": "0b251f2029d165204d2ab3dde32ddc3950a0a70f2ac1cee3eea4ae8c38d158f4",
+    "skills/get-haiggoh/SKILL.md": "0216b21aa93632f3b6d718f4a7a37b16ec2a362d4172efd2f86d97cbf1abcc51"
+  },
+  "schema": "haiggoh-portable-build/1",
+  "source_commit": "0cae5233507d2ece1c3392edafbfaf3bab7d14e2",
+  "source_repo": "haiggoh/get-haiggoh",
+  "transform_version": "1"
+}

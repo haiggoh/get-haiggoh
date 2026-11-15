@@ -1,0 +1,494 @@
+"""Pure, unit-testable core for get-haiggoh.
+
+No subprocess/network calls live here — hooks/check-installed.py and bin/get-haiggoh.py
+are the only places that shell out to `claude`/`git`, so this module stays trivially
+mockable in tests. Every loader is fail-safe (returns an empty structure on error) —
+a corrupt/missing file must never crash a SessionStart hook.
+"""
+import json
+import os
+import re
+import shutil
+import subprocess
+import tempfile
+import urllib.request
+from datetime import date
+
+
+def known_marketplaces_path():
+    return os.environ.get("GET_HAIGGOH_KNOWN_MARKETPLACES_FILE") or os.path.expanduser(
+        "~/.claude/plugins/known_marketplaces.json")
+
+
+def installed_plugins_path():
+    return os.environ.get("GET_HAIGGOH_INSTALLED_PLUGINS_FILE") or os.path.expanduser(
+        "~/.claude/plugins/installed_plugins.json")
+
+
+def skip_list_path():
+    return os.environ.get("GET_HAIGGOH_SKIP_FILE") or os.path.expanduser(
+        "~/.claude/.get-haiggoh-skip.json")
+
+
+def refresh_stamp_path():
+    return os.environ.get("GET_HAIGGOH_REFRESH_STAMP_FILE") or os.path.expanduser(
+        "~/.claude/.get-haiggoh-last-refresh")
+
+
+def resolve_marketplace_json_path(known_marketplaces_data, marketplace_name="haiggoh"):
+    """Given the parsed contents of known_marketplaces.json, return the path to that
+    marketplace's marketplace.json inside its cloned installLocation, or None if the
+    marketplace isn't registered. This is the MARKETPLACE-REPO copy — always read this,
+    never a plugin's own bundled $CLAUDE_PLUGIN_ROOT copy, which is frozen at whatever
+    version was installed and goes stale the moment a newer one is published."""
+    entry = known_marketplaces_data.get(marketplace_name)
+    if not entry or not entry.get("installLocation"):
+        return None
+    return os.path.join(entry["installLocation"], ".claude-plugin", "marketplace.json")
+
+
+def load_json(path):
+    """Fail-safe JSON read: missing file, malformed JSON, or any other error -> {}."""
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def load_marketplace_entries(marketplace_data):
+    """Return the plugins list from a parsed marketplace.json, or [] if absent/malformed."""
+    entries = marketplace_data.get("plugins")
+    return entries if isinstance(entries, list) else []
+
+
+def load_installed(installed_data, marketplace_suffix="@haiggoh"):
+    """Return {plugin_name: {"version": str|None, "installPath": str|None}} for every
+    installed_plugins.json key ending in marketplace_suffix. Takes the FIRST scope entry
+    per plugin (mirrors how these plugins are installed today: one scope each).
+
+    `gitCommitSha` is deliberately NOT read. The harness writes it once at first install and
+    never rewrites it, so it is stale for every plugin that has been updated even once --
+    reading it at all invites a caller to compare against it again. `version` and
+    `installPath` are the two fields measured accurate in 11/11 plugins on 2026-08-30."""
+    out = {}
+    plugins = installed_data.get("plugins")
+    if not isinstance(plugins, dict):
+        return out
+    for key, scopes in plugins.items():
+        if not key.endswith(marketplace_suffix) or not scopes:
+            continue
+        name = key[: -len(marketplace_suffix)]
+        first = scopes[0]
+        out[name] = {
+            "version": first.get("version"),
+            "installPath": first.get("installPath"),
+        }
+    return out
+
+
+def entry_repo_url(entry):
+    """Extract a git URL from a marketplace entry's `source` field, or None for a
+    non-url source (e.g. the self-hosting "./" form) or a missing/malformed source."""
+    source = entry.get("source")
+    if isinstance(source, dict) and source.get("source") == "url":
+        return source.get("url")
+    return None
+
+
+def load_skip_list(path=None):
+    """Fail-safe read of the skip-list file: {plugin_name: "install"|"update"|"both"}."""
+    data = load_json(path or skip_list_path())
+    return data if isinstance(data, dict) else {}
+
+
+def save_skip_list(path, skip_list):
+    """Atomic write (tmp file + os.replace) so a crash mid-write can't corrupt the
+    skip-list, mirroring waypoints_core.save_store."""
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(skip_list, f, indent=2, ensure_ascii=False)
+            f.write("\n")
+        os.replace(tmp, path)
+    finally:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+
+
+def compute_missing(catalog_entries, installed, self_name):
+    """Catalog entries not present in `installed`, excluding self_name."""
+    return [e["name"] for e in catalog_entries
+            if e["name"] != self_name and e["name"] not in installed]
+
+
+def plugin_manifest_url(git_url):
+    """Turn a GitHub repo URL into the raw URL of that repo's .claude-plugin/plugin.json at
+    HEAD -- the REMOTE side of the version comparison. Returns None for anything that isn't a
+    recognizable GitHub owner/repo URL, and callers must treat None as "unknown" rather than
+    as outdated. Accepts the https, ssh and scp-style forms, with or without a `.git` suffix."""
+    if not isinstance(git_url, str):
+        return None
+    match = re.fullmatch(
+        r"(?:https?://(?:www\.)?github\.com/|ssh://git@github\.com/|git@github\.com:)"
+        r"([^/]+)/([^/]+?)(?:\.git)?/?",
+        git_url.strip())
+    if not match:
+        return None
+    owner, repo = match.groups()
+    return (f"https://raw.githubusercontent.com/{owner}/{repo}/HEAD"
+            "/.claude-plugin/plugin.json")
+
+
+def parse_version(text):
+    """A dotted-numeric version as a comparable tuple, or None if it isn't one. A leading
+    `v` is tolerated and a `-rc1`/`+build` suffix is IGNORED for ordering, so 0.4.0-rc1 and
+    0.4.0 compare EQUAL -- deliberate: this tool only ever needs "is the published version
+    ahead of mine", and pre-release ordering is not worth a false nag either way."""
+    if not isinstance(text, str):
+        return None
+    match = re.fullmatch(r"v?(\d+(?:\.\d+)*)(?:[-+].*)?", text.strip())
+    if not match:
+        return None
+    return tuple(int(part) for part in match.group(1).split("."))
+
+
+def remote_is_newer(installed_version, remote_version):
+    """True only when the remote version is demonstrably AHEAD of the installed one.
+
+    Falls silent (False) whenever either side is unknown -- a failed fetch or a manifest
+    with no version must never manufacture an "update available". Unequal-length versions
+    are zero-padded, so 0.4 and 0.4.0 are the same version. If either string is not
+    dotted-numeric at all, this degrades to plain inequality, which is the old
+    strict-difference behaviour for the one case where ordering is undefined."""
+    if not installed_version or not remote_version:
+        return False
+    left, right = parse_version(installed_version), parse_version(remote_version)
+    if left is None or right is None:
+        return installed_version.strip() != remote_version.strip()
+    width = max(len(left), len(right))
+    left += (0,) * (width - len(left))
+    right += (0,) * (width - len(right))
+    return right > left
+
+
+def compute_outdated(catalog_entries, installed, remote_versions, self_name=None):
+    """Installed entries whose PUBLISHED version is ahead of the installed version.
+
+    Compares versions, NOT commit shas. Measured 2026-08-30 on harness 2.1.246 across all 11
+    haiggoh plugins: installed_plugins.json keeps `version` and `installPath` accurate in
+    11/11 cases, while `gitCommitSha` has never been rewritten since first install (one plugin
+    still recorded its initial commit across three version bumps). Comparing that field
+    against remote HEAD therefore reported a phantom update for almost every plugin, every
+    session, which made a REAL pending update indistinguishable from the noise. Both sides of
+    the version comparison are accurate and cost the same one network call per plugin.
+
+    A same-version push is deliberately NOT reported: the install path is keyed on the
+    version (~/.claude/plugins/cache/<owner>/<name>/<version>/), so an update that doesn't
+    bump plugin.json has nowhere new to land and is a silent no-op -- nagging about it could
+    never be satisfied."""
+    out = []
+    for e in catalog_entries:
+        name = e["name"]
+        if name not in installed:
+            continue
+        if self_name and name == self_name:
+            continue
+        remote_version = remote_versions.get(name)
+        installed_version = installed[name].get("version")
+        if remote_is_newer(installed_version, remote_version):
+            out.append({"name": name, "installed_version": installed_version,
+                        "remote_version": remote_version})
+    return out
+
+
+def filter_missing_by_skip(missing, skip_list):
+    return [name for name in missing if skip_list.get(name) not in ("install", "both")]
+
+
+def filter_outdated_by_skip(outdated, skip_list):
+    return [item for item in outdated if skip_list.get(item["name"]) not in ("update", "both")]
+
+
+def filter_catalog_by_selection(catalog_entries, names=None, category=None):
+    """Narrow catalog entries to an explicit name list and/or a category, for selective
+    install/update (--only, --category). Both filters are AND'd when both are given.
+    None/empty means "no filter on that axis" -- so calling with neither returns the
+    catalog unchanged. `names` is matched case-sensitively against entry["name"]; unknown
+    names are silently dropped (not an error) so a typo just yields an empty selection
+    rather than crashing a SessionStart-adjacent call."""
+    out = catalog_entries
+    if names:
+        wanted = set(names)
+        out = [e for e in out if e["name"] in wanted]
+    if category:
+        out = [e for e in out if e.get("category") == category]
+    return out
+
+
+def today():
+    """Today as YYYY-MM-DD; overridable via $GET_HAIGGOH_TODAY (tests)."""
+    return os.environ.get("GET_HAIGGOH_TODAY") or date.today().isoformat()
+
+
+def should_refresh(stamp_path, today_str):
+    """True if the marketplace hasn't been network-refreshed yet today (missing stamp,
+    or stamp from a prior day)."""
+    stamped = load_json(stamp_path).get("date")
+    return stamped != today_str
+
+
+def mark_refreshed(stamp_path, today_str):
+    os.makedirs(os.path.dirname(stamp_path), exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(stamp_path), suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump({"date": today_str}, f)
+        os.replace(tmp, stamp_path)
+    finally:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+
+
+def save_refresh_state(stamp_path, today_str, remote_versions):
+    """Like mark_refreshed, but also caches the day's remote plugin VERSIONS alongside the
+    date (Option B): the once-per-day network fetch is paid on the refresh, and every later
+    same-day boot reads this cache to still surface outdated nudges WITHOUT a network hit.
+    Atomic write. should_refresh() only reads `.date`, so it is unaffected by the extra key.
+    `remote_versions` is {plugin_name: version_str|None}.
+
+    The cache key is `remote_versions`; a stamp written by an older release carries
+    `remote_shas` instead, which load_cached_versions ignores -- so the day it upgrades, the
+    nudge simply stays silent until the next daily refresh rather than comparing a version
+    against a sha."""
+    os.makedirs(os.path.dirname(stamp_path), exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(stamp_path), suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump({"date": today_str, "remote_versions": remote_versions or {}}, f)
+        os.replace(tmp, stamp_path)
+    finally:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+
+
+def load_cached_versions(stamp_path):
+    """Remote versions cached by the last save_refresh_state, or {} if absent/malformed (which
+    includes a legacy stamp holding `remote_shas`). Used on same-day boots to compute outdated
+    without re-fetching. compute_outdated treats a missing or None version as 'unknown' and
+    never manufactures a false positive from it."""
+    cached = load_json(stamp_path).get("remote_versions")
+    return cached if isinstance(cached, dict) else {}
+
+
+def format_nudge(missing, outdated, unverified=()):
+    """Nudge banner text, or '' if there's nothing to report. Points at the get-haiggoh
+    skill/plugin name so the user knows how to act on it, without executing anything
+    itself -- this hook only ever informs, never installs/updates on its own. `unverified`
+    names plugins whose published version could not be fetched: silence there would read as
+    'up to date', so they get one line of their own."""
+    lines = []
+    if missing or outdated:
+        lines.append("👨🏻‍💻 get-haiggoh: new or updated haiggoh plugins available "
+                     "(ask me to \"install all my haiggoh plugins\" to sync):")
+    for name in missing:
+        lines.append(f"  + {name} (not installed)")
+    for item in outdated:
+        lines.append(f"  ^ {item['name']} {item['installed_version']} -> "
+                     f"{item['remote_version']} (update available)")
+    if unverified:
+        lines.append("👨🏻‍💻 get-haiggoh: could not verify the published version of "
+                     + ", ".join(sorted(unverified))
+                     + " (network/TLS) -- `get-haiggoh plan` shows the diagnosis")
+    return "\n".join(lines)
+
+
+# --- 0.9.0: a broken published manifest is DIAGNOSED, never silently 'current' --------------
+
+def diagnose_manifest(body, url):
+    """Classify a fetched HEAD manifest. Returns (version, diagnostic): the published
+    version string on success (diagnostic None); on any failure version is None and
+    diagnostic is a {url, problem, meaning, fix} dict the caller renders LOUDLY.
+    Measured 2026-10-13/14: a conflict-marker manifest merged to the default branch made
+    every installer read garbage and fall back to the old version — the update was
+    invisible for hours. The old behaviour treated any failure as a silent None; silence
+    was the bug."""
+    if body is None:
+        return None, None
+    text = body.decode("utf-8", errors="replace") if isinstance(body, bytes) else body
+    if "<<<<<<<" in text or ">>>>>>>" in text:
+        return None, {"url": url,
+                      "problem": "manifest contains unresolved CONFLICT MARKERS",
+                      "meaning": ("an unresolved merge was published to the default branch; "
+                                  "version-keyed installers read garbage here and fall back to "
+                                  "the old version, so the update is invisible"),
+                      "fix": ("resolve .claude-plugin/plugin.json on the default branch (align "
+                              "every version surface), commit and push; if a tag announces the "
+                              "new version, move the tag onto the corrected commit (delete and "
+                              "re-push it) and say plainly that it moved")}
+    try:
+        data = json.loads(text)
+    except ValueError:
+        return None, {"url": url,
+                      "problem": "manifest is not valid JSON",
+                      "meaning": "the default branch's manifest cannot be parsed",
+                      "fix": "fix .claude-plugin/plugin.json on the default branch and push"}
+    version = data.get("version") if isinstance(data, dict) else None
+    if not isinstance(version, str) or not version:
+        return None, {"url": url,
+                      "problem": "manifest has no usable version key",
+                      "meaning": "the version the installer compares against is missing",
+                      "fix": ("add the version to .claude-plugin/plugin.json on the default "
+                              "branch and push")}
+    return version, None
+
+
+def tag_version_tuple(tag):
+    """(major, minor, patch) from a v-prefixed tag, suffixes ignored; None if not v-semver."""
+    m = re.match(r"^v(\d+)\.(\d+)\.(\d+)", tag or "")
+    return tuple(int(g) for g in m.groups()) if m else None
+
+
+def parse_latest_tag(ls_remote_output):
+    """Highest v-prefixed semver tag from `git ls-remote --tags` output; '^{}' peel lines
+    are ignored; None when no v-tag exists."""
+    best, best_key = None, None
+    for line in (ls_remote_output or "").splitlines():
+        ref = line.strip().split("\t")[-1] if "\t" in line else line.strip()
+        if not ref.startswith("refs/tags/") or ref.endswith("^{}"):
+            continue
+        tag = ref[len("refs/tags/"):]
+        key = tag_version_tuple(tag)
+        if key is not None and (best_key is None or key > best_key):
+            best, best_key = tag, key
+    return best
+
+
+# --- 0.9.1: ONE transport for every network read, and it survives TLS interception -------
+#
+# Measured 2026-10-26 on a corporate network whose proxy re-signs HTTPS with a CA chain that
+# lacks the Authority Key Identifier: Python's OpenSSL rejects it (CERTIFICATE_VERIFY_FAILED)
+# while curl, which trusts the macOS keychain, fetches the same URL fine. Every manifest fetch
+# failed, so plan/apply/the hook could verify NOTHING. The CLI and the hook both go through
+# fetch_url, so a transport fix reaches every route at once.
+
+class FetchError(Exception):
+    """Both routes failed. `kind` is 'tls' (the certificate was rejected: interception, or a
+    trust-store problem) or 'network' (DNS, refused, timeout...)."""
+
+    def __init__(self, message, kind="network"):
+        super().__init__(message)
+        self.kind = kind
+
+
+_truststore_tried = False
+
+
+def _inject_truststore():
+    """Use the OS trust store when the optional `truststore` package is importable. Not a
+    dependency: the curl fallback below covers the same networks without it."""
+    global _truststore_tried
+    if _truststore_tried or os.environ.get("GET_HAIGGOH_NO_TRUSTSTORE"):
+        return
+    _truststore_tried = True
+    try:
+        import truststore
+        truststore.inject_into_ssl()
+    except Exception:
+        pass
+
+
+def _curl_path():
+    """System curl, or $GET_HAIGGOH_CURL. A SET override that is not an executable aborts with
+    its name rather than silently falling back to the default."""
+    override = os.environ.get("GET_HAIGGOH_CURL")
+    if override:
+        if not (os.path.isfile(override) and os.access(override, os.X_OK)):
+            raise FetchError(f"GET_HAIGGOH_CURL={override!r} is not an executable file")
+        return override
+    return shutil.which("curl")
+
+
+def _is_tls_error(text):
+    return "CERTIFICATE_VERIFY_FAILED" in text or "SSL" in text or "certificate" in text.lower()
+
+
+def fetch_url(url, timeout):
+    """The body at `url` as bytes. urllib first; on ANY urllib failure, system curl (OS trust
+    store, and it falls back to IPv4 where IPv6 is black-holed). Raises FetchError naming both
+    attempts when neither works -- never returns None."""
+    _inject_truststore()
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as response:
+            return response.read()
+    except Exception as exc:
+        first = f"urllib: {exc}"
+    curl = _curl_path()
+    if not curl:
+        raise FetchError(f"{first}; curl: not found on PATH",
+                         kind="tls" if _is_tls_error(first) else "network")
+    try:
+        r = subprocess.run([curl, "-fsSL", "--max-time", str(int(max(1, timeout))), url],
+                           capture_output=True, timeout=timeout + 2)
+    except Exception as exc:
+        raise FetchError(f"{first}; curl: {exc}", kind="network") from exc
+    if r.returncode == 0:
+        return r.stdout
+    second = f"curl (exit {r.returncode}): {r.stderr.decode('utf-8', 'replace').strip()}"
+    # curl exit 35/51/58/60 are TLS failures; urllib's text says the same thing its own way
+    tls = _is_tls_error(first) or r.returncode in (35, 51, 58, 60)
+    raise FetchError(f"{first}; {second}", kind="tls" if tls else "network")
+
+
+def fetch_diagnostic(url, err):
+    """The {url, problem, meaning, fix} block for a manifest that could not be downloaded."""
+    if getattr(err, "kind", "network") == "tls":
+        return {"url": url,
+                "problem": f"TLS certificate rejected: {err}",
+                "meaning": ("the published manifest could not be downloaded -- usually a network "
+                            "that intercepts HTTPS (corporate proxy). The installed version is "
+                            "UNVERIFIED, not current"),
+                "fix": (f"check by hand: curl -fsSL {url} | grep version ; to refresh anyway: "
+                        "claude plugin marketplace update haiggoh && claude plugin update "
+                        "<name>@haiggoh")}
+    return {"url": url,
+            "problem": f"fetch failed: {err}",
+            "meaning": ("the published manifest could not be downloaded; the installed version "
+                        "is UNVERIFIED, not current"),
+            "fix": (f"check connectivity, then: curl -fsSL {url} ; the manifest must exist at "
+                    "the default branch of the plugin repo")}
+
+
+def skip_remote_check():
+    """Test-only escape hatch. `GET_HAIGGOH_SKIP_REMOTE_VERSION_CHECK` is the current name;
+    the older `..._SHA_CHECK` spelling is still honoured."""
+    return bool(os.environ.get("GET_HAIGGOH_SKIP_REMOTE_VERSION_CHECK")
+                or os.environ.get("GET_HAIGGOH_SKIP_REMOTE_SHA_CHECK"))
+
+
+def remote_plugin_version(git_url, timeout):
+    """(version, diagnostic) for the repo's HEAD manifest -- shared by the CLI and the hook.
+    (None, None) means 'not checkable' (skipped, or not a GitHub URL); (None, diagnostic)
+    means the check RAN and failed, which callers must surface, never treat as current."""
+    if skip_remote_check():
+        return None, None
+    manifest_url = plugin_manifest_url(git_url)
+    if not manifest_url:
+        return None, None
+    try:
+        body = fetch_url(manifest_url, timeout)
+    except FetchError as err:
+        return None, fetch_diagnostic(manifest_url, err)
+    return diagnose_manifest(body, manifest_url)
+
+
+def record_sweep(stamp_path, today_str, remote_versions, unverified):
+    """Stamp today's refresh and cache its versions ONLY when every plugin was verified.
+    Returns True if stamped. An incomplete sweep is retried next session instead of freezing
+    a blind day into the cache (measured 2026-10-26: one failed morning sweep silenced the
+    update nudge until midnight)."""
+    if unverified:
+        return False
+    save_refresh_state(stamp_path, today_str, remote_versions)
+    return True

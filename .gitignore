@@ -2,3 +2,5 @@ __pycache__/
 *.pyc
 .DS_Store
 .worktrees/
+dist/
+__pycache__/
