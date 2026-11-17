@@ -60,6 +60,7 @@ COPY_FILES = [
     "hooks/hooks.json",
     "hooks/check-installed.py",
     "get_haiggoh_core.py",
+    "get_haiggoh_hook_health.py",
     "scripts/catalog-parity.py",
     "scripts/get-haiggoh",
     "scripts/get-haiggoh-menu",

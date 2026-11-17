@@ -131,9 +131,19 @@ def _nudge_banner():
 
 def main():
     try:
-        json.loads(sys.stdin.read() or "{}")
+        payload = json.loads(sys.stdin.read() or "{}")
     except Exception:
         return  # malformed stdin -- fail-safe, no output
+
+    # Native Codex owns its registry. Never refresh Claude's marketplace or create
+    # Claude shortcuts from a Codex session; recover only verified manual duplicates.
+    import get_haiggoh_hook_health as health
+    if health.is_codex_payload(payload):
+        banner = health.codex_notice(payload)
+        if banner:
+            print(json.dumps({"hookSpecificOutput": {"hookEventName": "SessionStart",
+                                                     "additionalContext": banner}}))
+        return
 
     # Shortcuts need only the local installed record, so they do not wait on the marketplace.
     shim_note = _add_missing_shims(c.load_installed(c.load_json(c.installed_plugins_path())))
@@ -147,8 +157,15 @@ def main():
                                                    "additionalContext": banner}}))
 
 
-try:
-    main()
-except Exception:
-    pass
-sys.exit(0)
+if __name__ == "__main__":
+    if sys.argv[1:]:
+        if sys.argv[1:] in (["--help"], ["-h"]):
+            print("check-installed.py — SessionStart: Claude plugin checks, or verified Codex manual-hook recovery. Usage: check-installed.py [--help]. Environment: CODEX_HOME selects Codex state; GET_HAIGGOH_* selects Claude check paths and refresh settings.")
+            sys.exit(0)
+        print("usage: check-installed.py [--help]", file=sys.stderr)
+        sys.exit(2)
+    try:
+        main()
+    except Exception as exc:
+        print("get-haiggoh: startup check could not complete: " + type(exc).__name__, file=sys.stderr)
+    sys.exit(0)

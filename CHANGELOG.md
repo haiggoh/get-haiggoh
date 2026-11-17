@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.10.6] — 2026-11-17
+
+- In native Codex sessions, check manual hook paths instead of changing Claude marketplace or shortcut state. Missing duplicates are removed only when native metadata verifies a trusted maintained equivalent; preserve an exact backup and reject concurrent edits.
+- Recognize the local-agents to free-agents lineage during recovery. Unverified references stay visible; metadata discovery is bounded and makes no inference requests. Already loaded hooks may require a new chat.
+
 ## [0.10.5] — 2026-11-15
 
 ### Added — Wave D: committed portable package (COORDINATION C1/C2)
