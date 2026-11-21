@@ -316,7 +316,7 @@ def codex_notice(payload):
         return "get-haiggoh: hook recovery could not verify native metadata: " + str(exc)
     notices = []
     if result["repaired"]:
-        notices.append("get-haiggoh: removed %d missing manual hook duplicate(s) already supplied by trusted plugins; exact backup: %s. Start a new chat if old hooks were already loaded."
+        notices.append("get-haiggoh: removed %d missing manual hook duplicate(s) already supplied by trusted plugins; exact backup: %s. In Codex 0.171.0, the owning app-server can reload its user config with config/batchWrite (edits: [], reloadUserConfig: true); an unrelated server cannot reload this chat. Otherwise start a new chat."
                        % (len(result["repaired"]), result["backup"]))
     if result["unresolved"]:
         notices.append("get-haiggoh: unresolved hook reference(s): " + "; ".join(result["unresolved"])
