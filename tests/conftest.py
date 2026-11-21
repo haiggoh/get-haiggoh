@@ -14,6 +14,7 @@ def _isolate_shim_dirs(tmp_path_factory, monkeypatch):
     base = tmp_path_factory.mktemp("shim-isolation")
     monkeypatch.setenv("GET_HAIGGOH_SHIM_DIR", str(base / "bin"))
     monkeypatch.setenv("GET_HAIGGOH_SHIM_BACKUP_DIR", str(base / "backups"))
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(base / "claude"))
 
 
 class World:

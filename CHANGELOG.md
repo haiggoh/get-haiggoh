@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.10.7] — 2026-11-21
+
+- Diagnose missing literal manual Claude hook script paths at SessionStart, honoring `CLAUDE_CONFIG_DIR`. Report the event and target without command arguments, leave settings untouched, and report unreadable or malformed settings. Disabled hooks and ambiguous shell expressions are skipped.
+
 ## [0.10.6] — 2026-11-17
 
 - In native Codex sessions, check manual hook paths instead of changing Claude marketplace or shortcut state. Missing duplicates are removed only when native metadata verifies a trusted maintained equivalent; preserve an exact backup and reject concurrent edits.

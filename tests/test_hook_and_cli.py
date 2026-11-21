@@ -28,6 +28,58 @@ def _write_json(path, data):
         json.dump(data, f)
 
 
+def test_claude_startup_reports_only_provably_missing_scripts_without_arguments(tmp_path):
+    import shlex
+    config = tmp_path / "config with space"
+    config.mkdir()
+    healthy = tmp_path / "healthy.py"
+    healthy.write_text("pass\n")
+    missing = tmp_path / "missing script.py"
+    direct = tmp_path / "missing-direct.sh"
+    settings = config / "settings.json"
+    document = {"hooks": {"Stop": [{"hooks": [
+        {"type": "command", "command": f"python3 {shlex.quote(str(missing))} --secret PRIVATE_TOKEN"},
+        {"type": "command", "command": f"python3 {shlex.quote(str(healthy))}"},
+        {"type": "command", "command": f"python3 {shlex.quote(str(tmp_path / 'uncertain.py'))} | echo x"},
+        {"type": "command", "enabled": False, "command": f"python3 {shlex.quote(str(tmp_path / 'disabled.py'))}"},
+        {"type": "command", "command": shlex.quote(str(direct))},
+    ]}]}}
+    settings.write_text(json.dumps(document))
+    before = settings.read_bytes()
+    r = _run({"CLAUDE_CONFIG_DIR": str(config), "GET_HAIGGOH_NO_SHIMS": "1",
+              "GET_HAIGGOH_KNOWN_MARKETPLACES_FILE": str(tmp_path / "absent")}, "{}")
+    assert r.returncode == 0
+    notice = json.loads(r.stdout)["hookSpecificOutput"]["additionalContext"]
+    assert "Stop" in notice and str(missing) in notice and str(direct) in notice
+    assert "PRIVATE_TOKEN" not in notice and "--secret" not in notice
+    assert str(healthy) not in notice and "uncertain.py" not in notice and "disabled.py" not in notice
+    assert settings.read_bytes() == before
+
+
+def test_claude_startup_disabled_and_healthy_are_silent(tmp_path):
+    settings = tmp_path / "settings.json"
+    settings.write_text(json.dumps({"disableAllHooks": True, "hooks": {"Stop": [{"hooks": [
+        {"type": "command", "command": "python3 /missing.py"}]}]}}))
+    env = {"CLAUDE_CONFIG_DIR": str(tmp_path), "GET_HAIGGOH_NO_SHIMS": "1",
+           "GET_HAIGGOH_KNOWN_MARKETPLACES_FILE": str(tmp_path / "absent")}
+    assert _run(env, "{}").stdout == ""
+    settings.write_text(json.dumps({"hooks": {}}))
+    assert _run(env, "{}").stdout == ""
+
+
+def test_claude_startup_diagnoses_malformed_or_unreadable_settings(tmp_path):
+    settings = tmp_path / "settings.json"
+    env = {"CLAUDE_CONFIG_DIR": str(tmp_path), "GET_HAIGGOH_NO_SHIMS": "1",
+           "GET_HAIGGOH_KNOWN_MARKETPLACES_FILE": str(tmp_path / "absent")}
+    settings.write_text("{invalid PRIVATE_TOKEN")
+    r = _run(env, "{}")
+    assert "settings.json" in r.stdout and "PRIVATE_TOKEN" not in r.stdout
+    settings.unlink()
+    settings.mkdir()
+    r = _run(env, "{}")
+    assert "settings.json" in r.stdout
+
+
 def test_hook_prints_nothing_when_marketplace_not_registered(tmp_path):
     env = {
         "GET_HAIGGOH_KNOWN_MARKETPLACES_FILE": str(tmp_path / "nope.json"),

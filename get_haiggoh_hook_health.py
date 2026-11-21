@@ -111,6 +111,64 @@ def unique_object(pairs):
     return result
 
 
+def claude_notice():
+    """Diagnose literal manual script targets without executing or changing settings."""
+    config_dir = os.environ.get("CLAUDE_CONFIG_DIR")
+    if config_dir is not None and (not config_dir or not Path(config_dir).is_absolute()):
+        return "get-haiggoh: CLAUDE_CONFIG_DIR must be an absolute directory; hook health not checked."
+    config = (Path(config_dir) if config_dir is not None else Path.home() / ".claude") / "settings.json"
+    try:
+        try:
+            raw = config.read_bytes()
+        except FileNotFoundError:
+            return ""
+        doc = json.loads(raw, object_pairs_hook=unique_object)
+        if not isinstance(doc, dict):
+            raise ValueError("settings must be an object")
+        if doc.get("disableAllHooks") is True:
+            return ""
+        events = doc.get("hooks", {})
+        if not isinstance(events, dict):
+            raise ValueError("hooks must be an object")
+        missing = []
+        for event, groups in events.items():
+            if not isinstance(groups, list):
+                raise ValueError("hook groups must be arrays")
+            for group in groups:
+                if not isinstance(group, dict) or not isinstance(group.get("hooks"), list):
+                    raise ValueError("hook group must contain hooks")
+                if group.get("enabled") is False:
+                    continue
+                for hook in group["hooks"]:
+                    if not isinstance(hook, dict):
+                        raise ValueError("hook must be an object")
+                    if hook.get("type") != "command" or hook.get("enabled") is False:
+                        continue
+                    command = hook.get("command")
+                    if not isinstance(command, str) or any(ch in command for ch in ";&|<>$`\n\r*?[](){}\\"):
+                        continue
+                    try:
+                        parts = shlex.split(command)
+                    except ValueError:
+                        continue
+                    if not parts:
+                        continue
+                    if Path(parts[0]).name in ("python", "python3", "bash", "sh"):
+                        if len(parts) < 2:
+                            continue
+                        target = parts[1]
+                    else:
+                        target = parts[0]
+                    path = Path(target)
+                    if path.is_absolute() and not path.exists():
+                        missing.append(f"{event}: {path}")
+        if missing:
+            return "get-haiggoh: missing manual Claude hook target(s): " + "; ".join(missing) + ". Check the owner or installation; already loaded hooks may require a new session."
+        return ""
+    except (OSError, ValueError, TypeError, UnicodeError):
+        return "get-haiggoh: could not read or parse Claude settings.json; manual hook health was not checked."
+
+
 def repair_manual_hooks(path, metadata, apply=False):
     result = {"repaired": [], "repairable": [], "unresolved": [], "backup": None}
     try:
