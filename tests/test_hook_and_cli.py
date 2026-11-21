@@ -97,6 +97,18 @@ def test_claude_startup_diagnoses_malformed_or_unreadable_settings(tmp_path):
     assert "settings.json" in r.stdout
 
 
+def test_claude_startup_reports_invalid_config_dir_but_missing_settings_is_quiet(tmp_path):
+    missing = tmp_path / "missing"
+    file_path = tmp_path / "file"
+    file_path.write_text("not a directory")
+    env = {"GET_HAIGGOH_NO_SHIMS": "1", "GET_HAIGGOH_KNOWN_MARKETPLACES_FILE": str(tmp_path / "absent")}
+    for path in (missing, file_path):
+        r = _run({**env, "CLAUDE_CONFIG_DIR": str(path)}, "{}")
+        assert r.returncode == 0 and "CLAUDE_CONFIG_DIR" in r.stdout
+    r = _run({**env, "CLAUDE_CONFIG_DIR": str(tmp_path)}, "{}")
+    assert r.returncode == 0 and r.stdout == ""
+
+
 def test_hook_prints_nothing_when_marketplace_not_registered(tmp_path):
     env = {
         "GET_HAIGGOH_KNOWN_MARKETPLACES_FILE": str(tmp_path / "nope.json"),
