@@ -116,7 +116,15 @@ def claude_notice():
     """Diagnose literal manual script targets without executing or changing settings."""
     config_dir = os.environ.get("CLAUDE_CONFIG_DIR")
     if config_dir is not None and (not config_dir or not Path(config_dir).is_absolute()):
-        return "get-haiggoh: CLAUDE_CONFIG_DIR must be an absolute directory; hook health not checked."
+        return "get-haiggoh: CLAUDE_CONFIG_DIR must be an existing absolute directory; hook health not checked."
+    if config_dir is not None:
+        try:
+            if not stat.S_ISDIR(Path(config_dir).stat().st_mode):
+                return "get-haiggoh: CLAUDE_CONFIG_DIR must be an existing absolute directory; hook health not checked."
+        except FileNotFoundError:
+            return "get-haiggoh: CLAUDE_CONFIG_DIR must be an existing absolute directory; hook health not checked."
+        except OSError:
+            return "get-haiggoh: cannot access CLAUDE_CONFIG_DIR; hook health not checked."
     config = (Path(config_dir) if config_dir is not None else Path.home() / ".claude") / "settings.json"
     try:
         try:
