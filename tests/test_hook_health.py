@@ -140,6 +140,12 @@ def test_claude_payload_ignores_invalid_codex_override(monkeypatch):
     assert health.is_codex_payload({"transcript_path": str(Path.home() / ".claude/projects/session.jsonl")}) is False
 
 
+def test_custom_claude_payload_ignores_invalid_codex_override(tmp_path, monkeypatch):
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
+    monkeypatch.setenv("CODEX_HOME", "not-an-absolute-path")
+    assert health.is_codex_payload({"transcript_path": str(tmp_path / "projects/session.jsonl")}) is False
+
+
 def test_ambiguous_json_keys_are_never_rewritten(tmp_path):
     config, metadata = setup(tmp_path)
     doc = config.read_text()
