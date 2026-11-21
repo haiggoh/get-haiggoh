@@ -178,6 +178,17 @@ def test_healthy_codex_startup_does_not_query_native_inventory(tmp_path, monkeyp
     assert health.codex_notice({"cwd": str(tmp_path)}) == ""
 
 
+def test_codex_repair_notice_describes_owning_server_reload(tmp_path, monkeypatch):
+    config, metadata = setup(tmp_path)
+    config.rename(tmp_path / "hooks.json")
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
+    monkeypatch.setattr(health, "native_hooks", lambda cwd: metadata)
+    notice = health.codex_notice({"cwd": str(tmp_path)})
+    assert "0.171.0" in notice and "owning" in notice
+    assert "config/batchWrite" in notice and "reloadUserConfig" in notice
+    assert "new chat" in notice
+
+
 @pytest.mark.parametrize("respond", [True, False])
 def test_native_inventory_is_bounded_and_cleans_up_its_own_child(tmp_path, monkeypatch, respond):
     import subprocess

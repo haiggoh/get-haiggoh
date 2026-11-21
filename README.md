@@ -106,6 +106,19 @@ The SessionStart hook also adds missing shortcuts, but only ones that collide wi
 Environment: `GET_HAIGGOH_NO_SHIMS=1` disables shortcut creation; `GET_HAIGGOH_SHIM_DIR` and
 `GET_HAIGGOH_SHIM_BACKUP_DIR` move the two directories (`get-haiggoh --help` lists all).
 
+## Hook health at startup
+
+Claude startup reports missing simple manual script targets without printing command arguments
+or editing settings. It honors `CLAUDE_CONFIG_DIR` and skips ambiguous shell expressions. Restoring
+the original program at the same path may let an already loaded command run again.
+
+Codex startup removes a missing manual duplicate only when a trusted installed equivalent is
+verified, and records an exact backup. In Codex 0.171.0, a client connected to the **owning**
+app-server can reload its user configuration with `config/batchWrite` using `edits: []` and
+`reloadUserConfig: true`; this was observed to remove the stale hook in the same turn. A newly
+spawned unrelated server does not reload the original chat. If the owning client does not expose
+that operation, start a new chat to pick up the change. get-haiggoh does not perform this reload.
+
 ## Verifying versions on restrictive networks
 
 `plan`, `apply` and the SessionStart hook compare each installed plugin against the version its
