@@ -3,6 +3,7 @@
 ## [0.10.7] — 2026-11-21
 
 - Diagnose missing literal manual Claude hook script paths at SessionStart, honoring `CLAUDE_CONFIG_DIR`. Report the event and target without command arguments, leave settings untouched, and report unreadable or malformed settings. Disabled hooks and ambiguous shell expressions are skipped.
+- Make portable build-stamp permissions deterministic under restrictive umasks.
 
 ## [0.10.6] — 2026-11-17
 

@@ -67,6 +67,23 @@ def test_claude_startup_disabled_and_healthy_are_silent(tmp_path):
     assert _run(env, "{}").stdout == ""
 
 
+def test_claude_startup_expands_only_unquoted_tilde_and_safe_home(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    settings = tmp_path / "settings.json"
+    commands = ["python3 ~/missing.py", "~/direct.sh", "python3 '~/quoted.py'",
+                'python3 "~/double.py"', 'python3 "$HOME/home.py"',
+                "python3 '$HOME/literal.py'"]
+    settings.write_text(json.dumps({"hooks": {"Stop": [{"hooks": [
+        {"type": "command", "command": c} for c in commands]}]}}))
+    r = _run({"HOME": str(home), "CLAUDE_CONFIG_DIR": str(tmp_path),
+              "GET_HAIGGOH_NO_SHIMS": "1", "GET_HAIGGOH_KNOWN_MARKETPLACES_FILE": str(tmp_path / "absent")}, "{}")
+    notice = json.loads(r.stdout)["hookSpecificOutput"]["additionalContext"]
+    assert str(home / "missing.py") in notice and str(home / "direct.sh") in notice
+    assert str(home / "home.py") in notice
+    assert "quoted.py" not in notice and "double.py" not in notice and "literal.py" not in notice
+
+
 def test_claude_startup_diagnoses_malformed_or_unreadable_settings(tmp_path):
     settings = tmp_path / "settings.json"
     env = {"CLAUDE_CONFIG_DIR": str(tmp_path), "GET_HAIGGOH_NO_SHIMS": "1",

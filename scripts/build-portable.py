@@ -196,6 +196,7 @@ def write_build_json(dest, root, commit_override):
     }
     with open(os.path.join(dest, "PORTABLE-BUILD.json"), "w", encoding="utf-8") as f:
         f.write(json.dumps(doc, indent=2, sort_keys=True) + "\n")
+    os.chmod(os.path.join(dest, "PORTABLE-BUILD.json"), 0o644)
 
 
 def walk_files(root):

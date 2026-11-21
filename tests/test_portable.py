@@ -46,6 +46,13 @@ def test_portable_dir_is_a_fresh_build():
     assert r.returncode == 0, r.stdout + r.stderr
 
 
+@pytest.mark.parametrize("mask", [0o022, 0o077])
+def test_freshness_check_is_independent_of_umask(mask):
+    r = subprocess.run([sys.executable, str(BUILD), "--check"], capture_output=True,
+                       text=True, cwd=ROOT, timeout=60, preexec_fn=lambda: os.umask(mask))
+    assert r.returncode == 0, r.stdout + r.stderr
+
+
 def test_portable_manifest_same_name_no_bin():
     m = json.loads((PORTABLE / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
     host = json.loads((ROOT / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))

@@ -9,6 +9,7 @@ import copy
 import json
 import os
 from pathlib import Path
+import re
 import selectors
 import shlex
 import signal
@@ -145,7 +146,7 @@ def claude_notice():
                     if hook.get("type") != "command" or hook.get("enabled") is False:
                         continue
                     command = hook.get("command")
-                    if not isinstance(command, str) or any(ch in command for ch in ";&|<>$`\n\r*?[](){}\\"):
+                    if not isinstance(command, str) or any(ch in command.replace("$HOME/", "") for ch in ";&|<>$`\n\r*?[](){}\\"):
                         continue
                     try:
                         parts = shlex.split(command)
@@ -153,17 +154,29 @@ def claude_notice():
                         continue
                     if not parts:
                         continue
+                    raw_parts = re.findall(r'''(?:[^\s'\"]+|'[^']*'|"[^"]*")+''', command)
+                    if len(raw_parts) != len(parts):
+                        continue
                     if Path(parts[0]).name in ("python", "python3", "bash", "sh"):
                         if len(parts) < 2:
                             continue
-                        target = parts[1]
+                        index = 1
                     else:
-                        target = parts[0]
+                        index = 0
+                    target, raw_target = parts[index], raw_parts[index]
+                    if raw_target.startswith("~/") and "$" not in target:
+                        target = str(Path.home()) + target[1:]
+                    elif (os.environ.get("HOME") and target.count("$") == 1 and
+                          (re.fullmatch(r"\$HOME/[^'\"]+", raw_target) or
+                           re.fullmatch(r'"\$HOME/[^"\']+"', raw_target))):
+                        target = str(Path.home()) + target[5:]
+                    elif "$" in target:
+                        continue
                     path = Path(target)
                     if path.is_absolute() and not path.exists():
                         missing.append(f"{event}: {path}")
         if missing:
-            return "get-haiggoh: missing manual Claude hook target(s): " + "; ".join(missing) + ". Check the owner or installation; already loaded hooks may require a new session."
+            return "get-haiggoh: missing manual Claude hook target(s): " + "; ".join(missing) + ". Check the owner or installation. Restoring the original program at the same path may allow a loaded command to run; settings changes may require a new session."
         return ""
     except (OSError, ValueError, TypeError, UnicodeError):
         return "get-haiggoh: could not read or parse Claude settings.json; manual hook health was not checked."
