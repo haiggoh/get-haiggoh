@@ -151,7 +151,7 @@ def main():
         banner = _nudge_banner()
     except Exception:
         banner = ""
-    banner = "\n".join(part for part in (banner, shim_note) if part)
+    banner = "\n".join(part for part in (banner, shim_note, health.claude_notice()) if part)
     if banner:
         print(json.dumps({"hookSpecificOutput": {"hookEventName": "SessionStart",
                                                    "additionalContext": banner}}))

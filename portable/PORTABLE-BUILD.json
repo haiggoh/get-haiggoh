@@ -76,10 +76,10 @@
     }
   ],
   "files": {
-    ".claude-plugin/plugin.json": "22239688c4b4bfdb074577ad7cedf9e89f42102a311ad9150f61e711f55e32b6",
+    ".claude-plugin/plugin.json": "7d22ed3113670ccc89d229684c7b6e4e1b2fc1d66c7ca7d76bd9845327cca088",
     "get_haiggoh_core.py": "414a3aa36626f5b0384f8027d2416e2833ef81178a098ddfe2af06992ac819e0",
-    "get_haiggoh_hook_health.py": "5df284d97e262dc38fcd555f448f2ca49ee4abb44b3d13677c6f51e21d13d3bb",
-    "hooks/check-installed.py": "16721dec49640ff5064bdba991e21517109e355e299f1fabbcfcb8e6dfeec6cf",
+    "get_haiggoh_hook_health.py": "f38e2b38815853f6f58592da4990002f1528f7c021e8c304eeaed1293e69f784",
+    "hooks/check-installed.py": "cf3e34f30a3eabd0398b5ad30bfee469462265fd2a535249a2d81486964ccfc0",
     "hooks/hooks.json": "d045bbf19f6bc345c156d373c9e182ac80228017d84eaf1ec8991000044039c0",
     "scripts/catalog-parity.py": "d7a4cbd43b62141ced1fea349cddb5ea26d8fd26931368db8476c102659eaacd",
     "scripts/get-haiggoh": "bf3b4bab01c0fc83c3e5d54f0947d1dc42847d5d3812eecf24d74b0dd1ad50d5",
@@ -90,7 +90,7 @@
     "skills/get-haiggoh/SKILL.md": "0216b21aa93632f3b6d718f4a7a37b16ec2a362d4172efd2f86d97cbf1abcc51"
   },
   "schema": "haiggoh-portable-build/1",
-  "source_commit": "a37b8821c443ca640753751b1ac85f9ed0eeda33",
+  "source_commit": "57e4117a6d7ca0e7ffefd4e4e752fbcfed945c86",
   "source_repo": "haiggoh/get-haiggoh",
   "transform_version": "1"
 }
