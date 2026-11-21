@@ -295,6 +295,9 @@ def is_codex_payload(payload):
     native = Path(transcript).resolve()
     if native.is_relative_to(Path.home() / ".claude" / "projects"):
         return False
+    claude_dir = os.environ.get("CLAUDE_CONFIG_DIR")
+    if claude_dir and Path(claude_dir).is_absolute() and native.is_relative_to(Path(claude_dir).resolve() / "projects"):
+        return False
     return native.is_relative_to(codex_home().resolve() / "sessions")
 
 
