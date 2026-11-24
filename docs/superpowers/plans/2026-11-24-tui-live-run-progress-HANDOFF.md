@@ -6,6 +6,8 @@ A paid Opus session wrote and committed the plan, after the user decided its ope
 
 **Relaunch (2026-11-24 ~18:50 CET):** the first GLM session (pid 2065, 15:22) made ZERO progress. Every request returned HTTP 400 (`Unsupported parameter(s): _la_booked_tokens`), a free-agents 0.62.3 proxy bug. That bug is fixed in **free-agents 0.63.1** (verified installed, and the canonical checkout is at `1cb38cb`). The Mac was then rebooted, and that session is gone. It committed nothing: the branch is unchanged at this handoff's commit. You are the fresh successor. Start at §5 exactly as written; nothing from the first attempt needs undoing.
 
+**Relaunch 2 (2026-11-24 ~19:05 CET), now on Mistral Large 4 "Le Chonk":** the second GLM session (pid 27787, 18:48) also made zero progress. This time NVIDIA's `z-ai/glm-5.3-flash` endpoint itself hung: a 16-token request sent DIRECTLY to NVIDIA, without the proxy, got no answer in 90 s, while `mistralai/mistral-large-4-1t-a52b` on the same key answered `200` in under 1 s. The user chose a fresh Le Chonk session. The branch is still unchanged since this handoff; nothing to undo.
+
 ## 2. State (verified 2026-11-24 15:2x CET)
 
 - Worktree `~/ClaudeWorkspace/get-haiggoh/.wt/tui-live-run-progress`, branch `feat/tui-live-run-progress`. Clean, and it contains `origin/main` (`a4a0763`). The canonical checkout `~/ClaudeWorkspace/get-haiggoh` is on `main`; leave it there.
@@ -33,9 +35,9 @@ The full design is in the spec, `docs/superpowers/specs/2026-11-23-get-haiggoh-t
 3. Commit every task, staged **by path** (never `git add -A` / `git add .`), and check `git diff --cached --stat` first. Every commit ends with exactly these two trailer lines:
    ```
    Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
-   Co-Authored-By: GLM 5.3 <noreply@z.ai>
+   Co-Authored-By: Mistral Large 4 "Le Chonk" 1T-A52B <noreply@mistral.ai>
    ```
-   (GLM 5.3 Flash commits as `GLM 5.3`, by the user's ruling; never invent a "GLM 5.3 Flash" trailer.)
+   (This session runs on Mistral Large 4 "Le Chonk", alias `nvidia-mistral-large4`. The trailer is copied verbatim from the attribution table; do not alter it.)
 4. Push the branch only when the plan says so (end of Task 8). **Never merge, tag, release, run `rtc-ship`, `claude plugin update` or `get-haiggoh apply`.** Those need the user's explicit go at Task 9.
 5. TDD every change: write the test, see it fail for the right reason, implement, see it pass. Run every discriminant the plan lists and quote its RED line. Never weaken a test to get green.
 6. Pilot tests run ONLY under `~/.local/share/get-haiggoh/tui-venv/bin/python -m pytest … -rs`. A skipped pilot is a failed receipt.
