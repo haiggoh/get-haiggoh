@@ -35,9 +35,12 @@ The full design is in the spec, `docs/superpowers/specs/2026-11-23-get-haiggoh-t
 3. Commit every task, staged **by path** (never `git add -A` / `git add .`), and check `git diff --cached --stat` first. Every commit ends with exactly these two trailer lines:
    ```
    Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
-   Co-Authored-By: Mistral Large 4 "Le Chonk" 1T-A52B <noreply@mistral.ai>
+   Co-Authored-By: <the trailer of the model YOU run on, from the table below>
    ```
-   (This session runs on Mistral Large 4 "Le Chonk", alias `nvidia-mistral-large4`. The trailer is copied verbatim from the attribution table; do not alter it.)
+   Check which model you run on (your session banner / window title) and copy its line verbatim; never invent one:
+   - Mistral Large 4 "Le Chonk" (`nvidia-mistral-large4`): `Co-Authored-By: Mistral Large 4 "Le Chonk" 1T-A52B <noreply@mistral.ai>`
+   - Z.ai GLM 5.3 Flash (`nvidia-glm53`): `Co-Authored-By: GLM 5.3 <noreply@z.ai>` (Flash commits as `GLM 5.3`, by the user's ruling)
+   - Any other model: STOP and ask; do not derive a trailer.
 4. Push the branch only when the plan says so (end of Task 8). **Never merge, tag, release, run `rtc-ship`, `claude plugin update` or `get-haiggoh apply`.** Those need the user's explicit go at Task 9.
 5. TDD every change: write the test, see it fail for the right reason, implement, see it pass. Run every discriminant the plan lists and quote its RED line. Never weaken a test to get green.
 6. Pilot tests run ONLY under `~/.local/share/get-haiggoh/tui-venv/bin/python -m pytest … -rs`. A skipped pilot is a failed receipt.
@@ -53,7 +56,7 @@ The full design is in the spec, `docs/superpowers/specs/2026-11-23-get-haiggoh-t
 
 ## 5. Next action
 
-Start at **Task 1** of `docs/superpowers/plans/2026-11-24-tui-live-run-progress.md`. Read the whole plan (and the spec it cites) first. Phase 0 is done (§2): do not redo it, but do quote §2's baseline lines in your Task 1 receipt for comparison. Run Tasks 1 → 2 → 2a → 3 → 4 → 5 → 6 → 7 → 8 in order, then Task 9 Step 1 (ask the user) and STOP there.
+**Phase 0 and Task 1 are DONE** (Task 1 = `9a808ed`, receipt `80a9b6b`; see §6). Do not redo them. **Start at Task 2** of `docs/superpowers/plans/2026-11-24-tui-live-run-progress.md`. Read the whole plan (and the spec it cites) first. Then run Tasks 2 → 2a → 3 → 4 → 5 → 6 → 7 → 8 in order, then Task 9 Step 1 (ask the user) and STOP there. Before starting Task 2, run `git log --oneline -3` and read §6: if a later task already has a receipt there, continue after the LAST receipt instead (the log, not this paragraph, is the truth about progress).
 
 ## 6. Progress log (append one line per receipt: task · commit · pass line · discriminant RED line)
 
