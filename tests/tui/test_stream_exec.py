@@ -116,6 +116,8 @@ class StreamExecTests(unittest.TestCase):
             time.sleep(0.05)
 
     def test_cancel_after_clean_exit_is_not_cancelled(self):
+        # the stop lands while the child is alive, but the child IGNORES SIGTERM
+        # and exits 0 on its own — only death BY A SIGNAL may mark cancelled
         control = rn.RunControl()
 
         def stopper():
@@ -124,8 +126,8 @@ class StreamExecTests(unittest.TestCase):
 
         th = threading.Thread(target=stopper)
         th.start()
-        res = rn.stream_execute(_child("print('bye', flush=True)"), on_line=lambda line: None,
-                                control=control)
+        code = "import signal,time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(0.5)"
+        res = rn.stream_execute(_child(code), on_line=lambda line: None, control=control)
         th.join()
         self.assertEqual(res.returncode, 0)
         self.assertFalse(res.cancelled, "only death BY A SIGNAL marks cancelled")
