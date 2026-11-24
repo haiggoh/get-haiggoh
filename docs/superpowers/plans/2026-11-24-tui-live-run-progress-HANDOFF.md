@@ -4,6 +4,8 @@
 
 A paid Opus session wrote and committed the plan, after the user decided its open design questions (2026-11-24, recorded in the plan's "Deviations"). It then ran Phase 0. The user asked for execution to be handed to a free GLM 5.3 Flash session at max effort. Nothing failed; this is a planned handover, not a recovery.
 
+**Relaunch (2026-11-24 ~18:50 CET):** the first GLM session (pid 2065, 15:22) made ZERO progress. Every request returned HTTP 400 (`Unsupported parameter(s): _la_booked_tokens`), a free-agents 0.62.3 proxy bug. That bug is fixed in **free-agents 0.63.1** (verified installed, and the canonical checkout is at `1cb38cb`). The Mac was then rebooted, and that session is gone. It committed nothing: the branch is unchanged at this handoff's commit. You are the fresh successor. Start at §5 exactly as written; nothing from the first attempt needs undoing.
+
 ## 2. State (verified 2026-11-24 15:2x CET)
 
 - Worktree `~/ClaudeWorkspace/get-haiggoh/.wt/tui-live-run-progress`, branch `feat/tui-live-run-progress`. Clean, and it contains `origin/main` (`a4a0763`). The canonical checkout `~/ClaudeWorkspace/get-haiggoh` is on `main`; leave it there.
