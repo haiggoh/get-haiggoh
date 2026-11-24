@@ -8,7 +8,12 @@
 
 **Goal:** A bulk update / install / uninstall runs on a worker thread while the main list stays live: spinner + per-item bar on the running row, a dim heartbeat line under `Q) Quit`, ✓/✗ per row as steps land, Esc-cancel dialogs, a per-step timeout, and a closing report modal.
 
-**Architecture:** `runner.py` gains a streaming, killable executor (`stream_execute`) and a `RunControl` stop handle behind the existing `run_steps` seam. A new pure module `runstate.py` (no Textual) holds the run model and every string the UI paints (spinner, bar, row decoration, dim line, subtitle), so rendering is unit-testable. `app.py` runs `run_steps` in a `@work(thread=True)` worker and bridges events with `call_from_thread`; `screens.py` paints from `app.run_state` on a 150 ms timer, adds the cancel dialogs and `RunReportScreen`, and deletes the blocking `ProgressScreen`.
+**Architecture:**
+- `runner.py` gains a streaming, killable executor (`stream_execute`, with an idle timeout) and a `RunControl` stop handle behind the existing `run_steps` seam.
+- A new local-only `status.reread_row` replaces the per-step full network sweep (measured 8.5–11.1 s per sweep, two per step). There is no network inside a run.
+- A new pure module `runstate.py` (no Textual) holds the run model and every string the UI paints (spinner, bar, row decoration, dim line, subtitle), so rendering is unit-testable.
+- `app.py` runs `run_steps` in a `@work(thread=True)` worker and bridges events with `call_from_thread`. The self-update step runs through the same worker before the execv relaunch, and the post-run full refresh goes to the existing background `_refresh_worker`.
+- `screens.py` paints from `app.run_state` on a 150 ms timer, adds the cancel dialogs and `RunReportScreen`, and deletes the blocking `ProgressScreen`.
 
 **Tech Stack:** Python 3 stdlib (runner/runstate), Textual 3.7.1 (pinned, TUI venv `~/.local/share/get-haiggoh/tui-venv`), pytest 9.
 
@@ -38,8 +43,12 @@
 | Background activity | nothing | dim line one gap row under `Q) Quit`, refreshed every 150 ms, heartbeat when silent |
 | Step finishes | nothing until all finish | row flips to `✓ <new version>` / `✗ <reason>` at once |
 | Run ends | modal list | `RunReportScreen` (✓/✗, first error line) |
-| Hung command | hangs forever | `✗ timed out` after `GET_HAIGGOH_STEP_TIMEOUT` (default 600 s), queue continues |
+| Hung command | hangs forever | `✗ timed out` after `GET_HAIGGOH_STEP_TIMEOUT` seconds with NO output (default 600 s), queue continues |
 | Esc during run | n/a | confirm → finish-current / immediate; double-Esc ≤ 0.5 s = immediate |
+| State check around each step | `build_rows(False)` before AND after every step: full network sweep, 8.5–11.1 s each (measured 2026-11-24) | `reread_row(before)`: that one row's installed state, local only |
+| After the run | `refresh_after_run()` does a full sweep on the UI thread (~10 s freeze) | report at once from the results; full refresh in the background `_refresh_worker` |
+| `get-haiggoh` in a multi-item set | `self_update_then_relaunch` runs on the UI thread (frozen) | the self step runs in the live worker; then pending + execv; the resumed process runs the rest inline |
+| Running row below the fold | invisible | scrolled into view at each step start, without moving the highlight |
 
 **Evidence (labelled):**
 - *confirmed live 2026-11-24:* worktree clean at `7f46276`, contains `origin/main` (`a4a0763`); canonical checkout on `main`.
@@ -54,6 +63,9 @@
 - **B6 changed:** an INVALID `GET_HAIGGOH_STEP_TIMEOUT` (set but not a number) makes the run refuse to start with an error notification naming the variable and its value — it does NOT fall back to 600 s. Reason: the user's standing rule "explicit overrides fail loudly — never fall through to the default". Unset ⇒ 600; `<= 0` ⇒ disabled (as spec).
 - **Non-goal "no real subprocesses in tests" interpreted:** its intent is no side effects (no claude/brew/network). The streaming executor's kill/timeout behaviour can only be proven on a real process group, so `test_stream_exec.py` spawns `sys.executable -c` children only. Every other test injects fakes.
 - **Gate fix added (Task 1):** not in the spec, but without it the spec's anti-goal "a suite that passes while the UI is still blocking" is guaranteed at ship time.
+- **User decisions 2026-11-24 (AskUserQuestion, all four scope additions accepted):** local per-step re-read (Task 2a); self-update runs inline (Task 6, which changes B8); ship gate runs the UI tests (Task 1); background post-run refresh (Task 6).
+- **Timeout semantics (user decision 2026-11-24):** the timeout is an IDLE limit. The clock resets on every output line, and a step is killed only after `GET_HAIGGOH_STEP_TIMEOUT` seconds with no output. This replaces the spec's total-per-step wording in Goal 8.
+- **B8 changed (user decision):** the self-update step goes through the live worker. If it ends `ok`, write the pending file for the rest and execv. If it does NOT end ok, do not relaunch (the new code never landed); continue with the rest in this process, inline, and the report shows the self-update ✗. The pending file format is unchanged.
 
 **Acceptance criteria:** all spec Goals 1–8 observable in pilot tests under the TUI venv with 0 skips; the ship gate runs those pilot tests; mutations listed per task go RED; screenshots of the running state, both cancel dialogs and the report inspected (Task 8); version 0.11.0 on every surface.
 
@@ -74,11 +86,11 @@
 
 - Textual stays pinned at 3.7.1; no new runtime dependencies. `runner.py` and `runstate.py` import no Textual (and no `rich` in `runstate.py`).
 - Row labels and the dim line are `rich.text.Text` objects, never markup strings (`[x]` is eaten as markup — 0.10.2 bug).
-- The UI thread never calls a blocking subprocess. The only exception left is `self_update_then_relaunch` (B8, unchanged on purpose).
-- `ok` is still decided by re-read state (`_ok_from_state`), never by an exit code.
+- The UI thread never calls a blocking subprocess or a network fetch: no exceptions, the self-update included.
+- `ok` is still decided by re-read state (`_ok_from_state`), never by an exit code. The re-read inside a run is LOCAL (`reread_row`); `latest` comes from the rows the app already had when the run started.
 - Spinner frames `⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏`; ASCII `|/-\` only when the effective locale (first non-empty of `LC_ALL`, `LC_CTYPE`, `LANG`) is exactly `C` or `POSIX`.
 - Repaint cadence 150 ms; bar 10 cells `▐` + `█`×done + `░`×rest; dim line single line, clamped to the list's content width with trailing `…`.
-- Timeout env `GET_HAIGGOH_STEP_TIMEOUT` (seconds, float ok); unset ⇒ 600; `<= 0` ⇒ none; invalid ⇒ refuse to run (Deviation B6).
+- Timeout env `GET_HAIGGOH_STEP_TIMEOUT` = seconds WITHOUT OUTPUT (idle; float ok); unset ⇒ 600; `<= 0` ⇒ none; invalid ⇒ refuse to run (Deviation B6).
 - Double-Esc window 0.5 s. Version 0.10.6 → **0.11.0**.
 
 ## Review Focus
@@ -95,14 +107,14 @@ At each milestone, run /offload (free-agents:offload): a stateless dispatch to a
 
 | Milestone | After | Requirements under review | Test files |
 |---|---|---|---|
-| QC-1 | Task 3 | runner contract: streaming events, stop modes, timeout, process-group kill, ok-from-state unchanged | `test_runner.py`, `test_stream_exec.py` |
+| QC-1 | Task 3 | runner contract: streaming events, stop modes, IDLE timeout, process-group kill, ok-from-state unchanged, local re-read never touches the network | `test_runner.py`, `test_stream_exec.py`, `test_status.py` |
 | QC-2 | Task 6 | Goals 1–5, 7, B5, R3, Review Focus 1/3/4/5 | `test_runstate.py`, `test_live_run.py` |
 | QC-3 | Task 7 | Goal 6 (both dialogs, double-Esc), B7 wording, ctrl+q | `test_live_run_cancel.py` |
 | QC-4 | Task 8 | gate really runs the pilots; screenshots match the spec mockups; version surfaces | the gate log, screenshots |
 
 **Test-file layout (split playbook, decided up front):** the waiting cases (real children, 150 ms timers, gated runners) go in their own files — `test_stream_exec.py`, `test_live_run.py`, `test_live_run_cancel.py` — so none of them becomes the floor of `test_app_pilot.py` / `test_tui_0102.py`. Each case uses timeouts ≤ 1 s.
 
-**Free-lane routing (Credit Efficient Mode):** the QC dispatches go to free lanes. Tasks 2, 4 and 5 (pure, fully specified by their tests) may be handed to a free session via free-session-handover; Tasks 6–7 (Textual threading) stay with the main executor.
+**Free-lane routing (Credit Efficient Mode):** the QC dispatches go to free lanes. Tasks 2, 2a, 4 and 5 (pure, fully specified by their tests) may be handed to a free session via free-session-handover; Tasks 6–7 (Textual threading) stay with the main executor.
 
 ---
 
@@ -171,9 +183,13 @@ def test_required_clean(self):
 **Interfaces:**
 - Produces:
   - `@dataclass class ExecResult: returncode: int | None; output: str; timed_out: bool = False; cancelled: bool = False`
-  - `StepResult(step, ok, output, outcome: str = "", after_version: str | None = None)`, with `__post_init__` setting `outcome = "ok" if ok else "failed"` when it is empty. Valid outcomes: `ok | failed | timed_out | cancelled | skipped`. Existing positional constructors keep working.
+  - `StepResult(step, ok, output, outcome: str = "", after_row: Row | None = None)`, with `__post_init__` setting `outcome = "ok" if ok else "failed"` when it is empty, and an `after_version` property (`after_row.installed if after_row else None`). Valid outcomes: `ok | failed | timed_out | cancelled | skipped`. Existing positional constructors keep working.
   - `class RunControl` (thread-safe, `threading.Lock`): `stop: str | None` (read-only property); `request_stop(mode: Literal["after_current", "immediate"]) -> None` (may upgrade after_current→immediate, never downgrades; `immediate` also calls `kill_current()`); `attach(proc) -> None`; `detach() -> None`; `kill_current() -> None` (SIGTERM to `os.getpgid(proc.pid)`, swallow `ProcessLookupError`).
-  - `run_steps(steps, execute=None, reread=build_rows, on_event=lambda e: None, control=None, timeout=None, stream=None) -> list[StepResult]`
+  - `run_steps(steps, execute=None, reread=build_rows, on_event=lambda e: None, control=None, timeout=None, stream=None, rows=None, reread_one=None) -> list[StepResult]`
+  - Re-read modes:
+    - `reread_one` given (the app always passes `status.reread_row`, Task 2a) ⇒ the before-rows are `{r.name: r for r in rows}` (the app's current rows; `rows` is required in this mode, `ValueError` otherwise). After each step, ONLY that step's row is re-read: `after = reread_one(before_row)`. `reread` is never called, so the run makes no network calls.
+    - `reread_one is None` ⇒ today's full `reread(False)` before and after each step, unchanged, so the 12 existing tests and `self_update_then_relaunch` keep their semantics.
+    - A `reread_one` that raises ⇒ `after = before`, so `ok` is False for update/install. This is the same fail-safe as today's `except: after_rows = rows`.
   - Events: `("start", step)`, `("output", step, line: str)`, `("result", StepResult)`.
   - Stream seam: `stream(argv, *, on_line: Callable[[str], None], control: RunControl | None, timeout: float | None) -> ExecResult`; the default is `stream_execute` (Task 3).
 - Semantics:
@@ -182,7 +198,7 @@ def test_required_clean(self):
   - Stop is checked BEFORE each step. `immediate` ⇒ the step becomes `skipped`. `after_current` ⇒ skipped only when `step.name` differs from the previous started step's name, so a two-step item finishes.
   - A skipped step emits `("result", r)` with `ok=False`, `outcome="skipped"`, `output=""`, and no reread.
   - An `ExecResult.timed_out` ⇒ `outcome="timed_out"`, ok False. `cancelled` ⇒ `outcome="cancelled"`, ok False. Both still re-read state for the rows.
-  - `after_version = after_rows[name].installed` when the row exists.
+  - `after_row = after_rows.get(name)` (full mode) or the `reread_one` result (local mode).
 
 - [ ] **Step 1: Write failing tests** (reuse `step`, `row`, `Reread` from the file; add `FakeStream(lines_by_name, results_by_name)` recording calls and emitting lines through `on_line`):
   - `test_events_in_order_with_output`: two steps, stream emits `["a","b"]` for the first ⇒ event kinds `start, output, output, result, start, result`; output events carry the step and the line.
@@ -190,19 +206,52 @@ def test_required_clean(self):
   - `test_stop_after_current_finishes_item_then_skips`: steps `[free-agents/plugin, free-agents/brew, waypoints/plugin]`; `on_event` calls `control.request_stop("after_current")` on the first `start` ⇒ outcomes `["ok"|"failed", <ran>, "skipped"]` and the stream was called exactly twice.
   - `test_stop_immediate_skips_rest`: request `immediate` on the first `start`; the stream returns `ExecResult(None, "", cancelled=True)` ⇒ outcomes `["cancelled", "skipped", "skipped"]`.
   - `test_timed_out_outcome`: the stream returns `timed_out=True` ⇒ `outcome == "timed_out"`, `ok is False`, and the next step still runs.
-  - `test_after_version_from_reread`: an update whose reread moves to `0.15.0` ⇒ `after_version == "0.15.0"`.
+  - `test_after_version_from_reread`: an update whose reread moves to `0.15.0` ⇒ `after_version == "0.15.0"`, and `after_row.installed == "0.15.0"`.
+  - `test_local_mode_never_calls_full_reread`: `reread=` a callable that raises `AssertionError("network sweep")`, `rows=[waypoints 0.14.3 → latest 0.15.0]`, and `reread_one` returning the row at 0.15.0 ⇒ `ok is True` and no AssertionError. `reread_one` is called once per step with the BEFORE row.
+  - `test_local_mode_keeps_latest_from_before`: `reread_one` returns 0.14.9, while before.latest is 0.15.0 ⇒ `ok is False` (still behind).
+  - `test_local_mode_reread_one_raises`: `reread_one` raises ⇒ `ok is False`, outcome `failed`, and the next step still runs.
+  - `test_local_mode_requires_rows`: `reread_one` without `rows` ⇒ `ValueError`.
   - `test_step_result_positional_compat`: `StepResult(s, True, "ok").outcome == "ok"`; `StepResult(s, False, "x").outcome == "failed"`.
 - [ ] **Step 2:** Run `python3 -m pytest tests/tui/test_runner.py -q`; the new tests FAIL and the old tests PASS.
 - [ ] **Step 3:** Implement as specified above. `stream` defaults lazily to `stream_execute`; until Task 3, define `stream_execute` as a stub that raises `NotImplementedError`, so the default path is visibly unbuilt.
 - [ ] **Step 4:** Run the whole `test_runner.py`; everything PASSES (the 12 old tests are unchanged).
-- [ ] **Step 5: Discriminant.** Temporarily make the `after_current` check ignore the name comparison; `test_stop_after_current_finishes_item_then_skips` must go RED. Revert, then confirm with `git diff` that only the intended hunks remain.
+- [ ] **Step 5: Discriminant.** Temporarily make the `after_current` check ignore the name comparison; `test_stop_after_current_finishes_item_then_skips` must go RED. Then make local mode also call `reread(False)` once; `test_local_mode_never_calls_full_reread` must go RED. Revert, then confirm with `git diff` that only the intended hunks remain.
 - [ ] **Step 6: Commit** `get_haiggoh_tui/runner.py tests/tui/test_runner.py` — `feat(runner): streaming events, RunControl stop handle, step outcomes`.
 
 🧪 **Receipt 2:** the pass line and the RED line from the mutation.
 
 ---
 
-### Task 3: `stream_execute` — line streaming, timeout, process-group kill
+### Task 2a: `status.reread_row` — local, single-row state re-read (no network)
+
+**Files:**
+- Modify: `get_haiggoh_tui/status.py` (add `reread_row`, plus a small refactor that lets `tool_status` skip the fetch)
+- Test: `tests/tui/test_status.py` (append `class RereadRowTests`)
+
+**Interfaces:**
+- Produces: `reread_row(before: Row, run=subprocess.run) -> Row`. It is a copy of `before` (`dataclasses.replace`), with `installed` and `status` re-derived from LOCAL state only; `latest` and `diagnostic` are carried over from `before`.
+  - Plugin rows (`section == "plugin"`): `installed = c.load_installed(c.load_json(c.installed_plugins_path())).get(name, {}).get("version")`.
+  - Tool rows: the installed half of `tool_status` only, i.e. `brew list --versions <short formula>`, then `version_cmd`. Extract it as `tool_installed(tool, run=subprocess.run) -> str | None`, and make `tool_status` call it so there is one copy.
+  - Status: `missing` if `installed is None`; `outdated` if `c.remote_is_newer(installed, before.latest)`; else `unverified` if `before.status == "unverified"`; else `current`.
+- Never fetches. The tests prove it by patching `c.fetch_url` (and `get_haiggoh_core`'s `urllib`) to raise.
+
+- [ ] **Step 1: Write failing tests.** Use the `World` fixture pattern from `tests/conftest.py` for `GET_HAIGGOH_INSTALLED_PLUGINS_FILE`; write the registry fixture JSON with the same key shape `load_installed` reads (copy an entry shape from `tests/test_get_haiggoh_core.py`).
+  - `test_plugin_updated_becomes_current`: before is `outdated` 0.14.3 → latest 0.15.0, and the registry now says 0.15.0 ⇒ `installed == "0.15.0"`, `status == "current"`, `latest == "0.15.0"`.
+  - `test_plugin_removed_becomes_missing`.
+  - `test_tool_uses_brew_list_only`: `run` fake answers `brew list --versions human-shell` with `"human-shell 1.2.0\n"`; the fake fetch raises ⇒ `installed == "1.2.0"` and the recorded argvs contain no `curl`/fetch.
+  - `test_no_network`: patch `get_haiggoh_core.fetch_url` with `side_effect=AssertionError` ⇒ a plugin row and a tool row both re-read fine.
+  - `test_tool_status_still_reports_installed` (the refactor kept behaviour): the existing `tool_status` tests pass unchanged.
+- [ ] **Step 2:** Run `python3 -m pytest tests/tui/test_status.py -q`; the new tests FAIL.
+- [ ] **Step 3:** Implement per the Interfaces block.
+- [ ] **Step 4:** Run `python3 -m pytest tests/tui/test_status.py tests/tui/test_runner.py -q`; PASS.
+- [ ] **Step 5: Timing receipt.** Read-only, on the real machine: `~/.local/share/get-haiggoh/tui-venv/bin/python -c "import time,sys;sys.path.insert(0,'.');from get_haiggoh_tui.status import build_rows,reread_row;rows=build_rows(True);t=time.monotonic();[reread_row(r) for r in rows];print(f'{len(rows)} rows {time.monotonic()-t:.2f}s')"`. Quote it next to the measured 8.5–11.1 s full sweep. The expectation is well under 1 s for all rows; if it is not, find out why before moving on.
+- [ ] **Step 6: Commit** `get_haiggoh_tui/status.py tests/tui/test_status.py` — `perf(tui): local single-row re-read for runs (no network sweep per step)`.
+
+🧪 **Receipt 2a:** the pass line and the timing line. Discriminant: make `reread_row` call `tool_status` (which fetches) ⇒ `test_no_network` RED. Revert.
+
+---
+
+### Task 3: `stream_execute` — line streaming, idle timeout, process-group kill
 
 **Files:**
 - Modify: `get_haiggoh_tui/runner.py` (replace the stub)
@@ -213,7 +262,7 @@ def test_required_clean(self):
 - Approach:
   - `subprocess.Popen(argv, stdout=PIPE, stderr=STDOUT, stdin=DEVNULL, start_new_session=True)` in binary mode.
   - A reader thread splits on `\n` AND `\r`, decodes each chunk with `errors="replace"`, accumulates the full output, and calls `on_line` for each non-empty piece. A final piece without a newline is still delivered.
-  - The main loop `proc.wait(0.05)` polls against a monotonic deadline. On timeout: `os.killpg(pgid, SIGTERM)`, wait `kill_grace`, then `SIGKILL`, and return `timed_out=True`.
+  - The main loop `proc.wait(0.05)` polls against an IDLE deadline: `last_output + timeout`, where the reader thread updates `last_output` (monotonic, under a lock) for every chunk received. When the deadline passes with no output: `os.killpg(pgid, SIGTERM)`, wait `kill_grace`, then `SIGKILL`, and return `timed_out=True`.
   - `control.attach(proc)` while running and `detach()` in a `finally`. `cancelled=True` when `control.stop == "immediate"` and the process died by a signal.
   - `FileNotFoundError` / `PermissionError` from Popen ⇒ `ExecResult(None, f"{argv[0]}: command not found" | str(exc))`, never raised.
   - Join the reader thread (timeout 1 s) before returning.
@@ -221,13 +270,14 @@ def test_required_clean(self):
 - [ ] **Step 1: Write failing tests.** All children are `[sys.executable, "-c", CODE]`; no case may wait longer than 3 s.
   - `test_lines_stream_before_exit`: the child prints `one`, flushes, sleeps 0.3, prints `two`. The first `on_line` arrives at least 0.2 s before the function returns (record `time.monotonic()`). `output` contains both lines and `returncode == 0`.
   - `test_timeout_kills_process_group`: the child spawns a grandchild `sleep(30)` (via `subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])`), prints the grandchild pid, then sleeps 30. Use `timeout=0.5, kill_grace=0.2` ⇒ `timed_out`, return within 2 s, and `os.kill(gpid, 0)` raises `ProcessLookupError` (after a ≤1 s retry loop).
+  - `test_idle_timeout_spares_a_chatty_command`: the child prints a line every 0.2 s for 1.5 s, then exits 0; `timeout=0.5` ⇒ `timed_out is False`, `returncode == 0`, and all lines are received. (This proves the timeout is idle-based, not a total limit.)
   - `test_immediate_cancel_kills`: a thread calls `control.request_stop("immediate")` 0.3 s after start ⇒ `cancelled is True`, return within 1.5 s.
   - `test_non_utf8_and_no_newline`: the child writes `b"caf\xe9\rdone"` without a newline ⇒ `on_line` received `"caf�"` and `"done"`, no exception.
   - `test_missing_command_is_a_result_not_an_exception`: `argv=["/nonexistent/brew", "x"]` ⇒ `returncode is None` and `"not found" in output`.
 - [ ] **Step 2:** Run `python3 -m pytest tests/tui/test_stream_exec.py -q`; expected FAIL (`NotImplementedError`).
 - [ ] **Step 3:** Implement as specified above.
 - [ ] **Step 4:** Run `python3 -m pytest tests/tui/test_stream_exec.py tests/tui/test_runner.py -q -p no:cacheprovider`; PASS. Time the file: `--durations=5`, every case < 3 s.
-- [ ] **Step 5: Discriminant.** Replace `os.killpg(pgid, …)` with `proc.terminate()`; `test_timeout_kills_process_group` must go RED (the grandchild survives). Revert. Separately, make the reader use `readline()` only (no `\r` split); `test_non_utf8_and_no_newline` must go RED. Revert, then confirm with `git diff` that the tree is clean apart from the real change.
+- [ ] **Step 5: Discriminant.** Replace `os.killpg(pgid, …)` with `proc.terminate()`; `test_timeout_kills_process_group` must go RED (the grandchild survives). Revert. Make the deadline `start + timeout` (total); `test_idle_timeout_spares_a_chatty_command` must go RED. Revert. Separately, make the reader use `readline()` only (no `\r` split); `test_non_utf8_and_no_newline` must go RED. Revert, then confirm with `git diff` that the tree is clean apart from the real change.
 - [ ] **Step 6: Commit** `get_haiggoh_tui/runner.py tests/tui/test_stream_exec.py` — `feat(runner): streaming executor with timeout and process-group kill`.
 - [ ] **Step 7: QC-1** (see the milestones table above).
 
@@ -320,13 +370,14 @@ def test_required_clean(self):
 ### Task 6: Inline live run on the main list (worker, painting, locks, report)
 
 **Files:**
-- Modify: `get_haiggoh_tui/app.py`: `__init__` (`self.run_state = None`, `self._run_control = None`), `_exec_steps`, new `_start_run`, `_run_worker`, `_on_run_event`, `_finish_run`, `run_active`.
+- Modify: `get_haiggoh_tui/app.py`: `__init__` (`self.run_state = None`, `self._run_control = None`, new injectable `reread_one=None` defaulting to `status.reread_row`), `_exec_steps`, new `_start_run`, `_run_worker`, `_on_run_event`, `_finish_run`, `run_active`; delete `refresh_after_run` (its only caller was `ProgressScreen`).
+- Modify: `get_haiggoh_tui/runner.py`: extract `relaunch_with_pending(op, rest_steps, pending_path, execv) -> None` (dedupe names → `write_pending` → execv `bin/get-haiggoh-tui --resume`) out of `self_update_then_relaunch`, which keeps its signature and calls it.
 - Modify: `get_haiggoh_tui/screens.py`: `row_label` (new `deco` param), `MainScreen.rebuild_rows`, `on_mount` (timer), new `_tick_run`, the guards in the tick/mode/quit actions, new `RunReportScreen`; DELETE `ProgressScreen`.
 - Modify: `get_haiggoh_tui/theme.tcss`: `#report-text` / `RunReportScreen` layout. The dim option uses the existing disabled-option style (`ansi_bright_black`), the same grey as `#summary`.
 - Create: `tests/tui/test_live_run.py`.
 
 **Interfaces:**
-- Consumes: `run_steps(..., on_event, control, timeout)` (Task 2), `RunControl` (Task 2), `step_timeout_from_env` (Task 4), `RunState` and its helpers (Task 5).
+- Consumes: `run_steps(..., on_event, control, timeout, rows, reread_one)` (Task 2), `RunControl` (Task 2), `StepResult.after_row` (Task 2), `reread_row` (Task 2a), `step_timeout_from_env` (Task 4), `RunState` and its helpers (Task 5).
 - Produces:
   - `GetHaiggohApp.run_state: RunState | None` (None when idle) and `GetHaiggohApp.run_active -> bool`.
   - `_start_run(op, steps)`: parse the timeout. On `ValueError`: `notify(str(exc), severity="error")` and return, without starting.
@@ -338,7 +389,17 @@ def test_required_clean(self):
   - The worker passes `on_event`, which handles `("output", …)` by calling `state.note_output(line)` directly: no `call_from_thread` per line (R2).
   - `start` and `result` go through `self.call_from_thread(self._on_run_event, e)`, which updates `RunState` and repaints that one row.
   - The worker's `finally` uses `call_from_thread(self._finish_run, results, error)`, where `error` is `f"run crashed: {exc}"` if the runner raised.
-  - `_finish_run` sets `state.finished`, sets `run_state = None`, calls `refresh_after_run()`, `rebuild_rows()` and `refresh_buttons()`, and pushes `RunReportScreen`.
+  - The worker calls `self.runner(steps, on_event=…, control=…, timeout=…, rows=list(self.rows), reread_one=self.reread_one)`.
+  - `_finish_run`:
+    - It sets `state.finished`, then `run_state = None`.
+    - It replaces each `self.rows` entry with the result's `after_row`, by name and when present, so the report and the list are right at once.
+    - It calls `rebuild_rows()`, `refresh_buttons()` and `refresh_summary()`, pushes `RunReportScreen`, and starts the existing `self._refresh_worker()` for the full background check. Nothing network-bound runs on the UI thread.
+  - Self-update (changed B8):
+    - When `steps` contains `SELF_NAME`, there are more steps, and `self.execv is not None`, `_exec_steps` starts the same run with ONLY the self steps and remembers `self._relaunch_rest = (op, rest)`.
+    - If the self result is ok, `_finish_run` skips the report and calls `relaunch_with_pending(op, rest, self.pending_path, self.execv)`.
+    - Otherwise it clears `_relaunch_rest`, keeps the self ✗ result, and starts a second run over `rest` in this process. The report at the end lists both runs' results.
+    - The resumed process (`--resume`) runs the rest through the normal inline path.
+  - Scroll-into-view: on each `start` event, if the running row's option is outside `ol.scrollable_content_region`, scroll it into view WITHOUT changing `ol.highlighted`. Use the y-offset of the option's first line from `ol._lines` (`[(option_index, line_offset), …]`, a private attribute of Textual 3.7.1), then `ol.scroll_to_region(Region(0, y, 1, 1), animate=False)`. Pin the private use with the test below, so a Textual bump that breaks it goes RED instead of silent.
 - Painting:
   - `MainScreen.on_mount` starts `self.set_interval(0.15, self._tick_run)`.
   - `_tick_run` returns at once when not `run_active`. Otherwise it increments `self._frame` and, for the current item's row index and the `runstatus` index only, calls `ol.replace_option_prompt_at_index(i, row_label(...)/Text(...))`. Width = `ol.scrollable_content_region.width`. It also updates `#subtitle` with `state.subtitle(now)`.
@@ -354,7 +415,7 @@ def test_required_clean(self):
   - Add a `GatedRunner(lines=("resolving…",), outcome="ok", raise_exc=None)` with these properties:
     - Its `__call__(steps, on_event=..., control=None, timeout=None, **kw)` emits `start` and then each line as `output` for every step.
     - It sets `self.started` (`threading.Event`), then waits on `self.release` (`threading.Event`) in 0.02 s slices, ending early on `control.stop == "immediate"`.
-    - It then emits a `result` with `after_version="9.9"`.
+    - It then emits a `result` whose `after_row` is the step's row from the `rows` kwarg, with `installed="9.9"` and `status="current"` (`dataclasses.replace`).
     - It deliberately has NO stop-skipping logic of its own. Runner semantics are Task 2's tests, and a fake that copied them would test itself.
   - Every test wraps its pilot body in `asyncio.wait_for(…, 10)`. A run that blocks the UI then fails with a timeout instead of hanging.
   - The tests:
@@ -370,6 +431,12 @@ def test_required_clean(self):
     - `test_runner_crash_unlocks_and_reports`: `GatedRunner(raise_exc=RuntimeError("boom"))` ⇒ the report contains `"run crashed: boom"`, and `app.run_active` is False.
     - `test_flood_of_output_keeps_ui_responsive`: `GatedRunner(lines=[f"l{i}" for i in range(5000)])` ⇒ while gated, `press("down")` moves the highlight within the 10 s wait_for, and the dim line shows `l4999`.
     - `test_dim_line_single_line_in_narrow_terminal`: `run_test(size=(50, 40))` ⇒ the `runstatus` prompt's `cell_width` ≤ the list's content width.
+    - `test_runner_gets_local_reread`: the `GatedRunner` records its kwargs ⇒ `kw["reread_one"]` is the app's `reread_one`, and `kw["rows"]` names equal the app's rows at run start.
+    - `test_report_appears_without_full_refresh_on_ui_thread`: `rows_loader` is a callable that, for `cached=False`, sleeps 3 s on a thread-safe counter. Release the run ⇒ the `RunReportScreen` is up within 1 s, and the slow loader runs in the background (counter incremented by the worker, not before the report).
+    - `test_list_reflects_after_rows_immediately`: the result's `after_row` has `installed="9.9"` and `status="current"` ⇒ after the run, `app.rows` has waypoints at 9.9 before any refresh completes.
+    - `test_self_update_runs_inline_then_relaunches`: rows include an outdated `get-haiggoh` plus waypoints; a fake `execv` records its argv. While gated, `app.screen` is a `MainScreen` and arrows work. Release (ok) ⇒ the pending file holds `["waypoints"]`, `execv` was called with `--resume`, and no report was pushed.
+    - `test_failed_self_update_continues_inline`: the self result is not ok ⇒ `execv` is NOT called, a second runner call over `["waypoints"]` happens, and the report lists both.
+    - `test_running_row_scrolled_into_view`: 25 extra plugin rows and `run_test(size=(80, 20))`; tick a row near the bottom and run ⇒ while gated, the running option's line lies within the visible region, and `ol.highlighted` is unchanged.
     - `test_invalid_timeout_refuses_to_run`: env `GET_HAIGGOH_STEP_TIMEOUT=abc` (patched with `mock.patch.dict(os.environ)`) ⇒ `runner.calls == []` and an error notification names the variable.
   - Update the existing tests that asserted on `ProgressScreen` (find them with `grep -n "ProgressScreen\|progress-out" tests/`) to assert on `RunReportScreen` instead. List each change in the receipt.
 - [ ] **Step 2:** Run `~/.local/share/get-haiggoh/tui-venv/bin/python -m pytest tests/tui/test_live_run.py -q -rs`; expected FAIL, with 0 skipped.
@@ -381,10 +448,12 @@ def test_required_clean(self):
   - (b) Stop appending the `runstatus` option ⇒ `test_dim_line_below_quit_after_gap` RED.
   - (c) Remove the `set_interval` ⇒ `test_heartbeat_changes_without_output` RED.
   - (d) In `rebuild_rows`, ignore `run_state` ⇒ `test_refresh_mid_run_keeps_decorations` RED.
+  - (e) In `_finish_run`, call `self.rows_loader(False)` synchronously ⇒ `test_report_appears_without_full_refresh_on_ui_thread` RED.
+  - (f) Route the self step through `self_update_then_relaunch` on the UI thread again ⇒ `test_self_update_runs_inline_then_relaunches` RED.
 - [ ] **Step 7: Commit** `get_haiggoh_tui/app.py get_haiggoh_tui/screens.py get_haiggoh_tui/theme.tcss tests/tui/test_live_run.py` plus any updated test files — `feat(tui): inline non-blocking bulk run with live row, dim heartbeat line and report`.
 - [ ] **Step 8: QC-2.**
 
-🧪 **Receipt 6:** the pass line (0 skipped), the four RED lines, the QC-2 table, and the model/route used.
+🧪 **Receipt 6:** the pass line (0 skipped), the six RED lines, the QC-2 table, and the model/route used.
 
 ---
 
@@ -440,7 +509,14 @@ def test_required_clean(self):
 - Modify: the README's TUI section, if Phase 0's grep found one describing the run screen.
 - Regenerate: `portable/`, via `python3 scripts/build-portable.py` (read its `--help` first; never hand-edit `portable/`).
 
-- [ ] **Step 1:** Bump `plugin.json`. Write the CHANGELOG entry in user-facing words: the TUI no longer freezes during bulk runs; the running row shows a spinner and per-item bar; a dim status line sits under Quit; Esc cancels (finish current / immediate, double-Esc); `GET_HAIGGOH_STEP_TIMEOUT` (default 600 s; an invalid value refuses to run); a closing report; and the ship gate now runs the TUI pilot tests.
+- [ ] **Step 1:** Bump `plugin.json`. Write the CHANGELOG entry in user-facing words, covering:
+  - The TUI no longer freezes during bulk runs, including when get-haiggoh updates itself.
+  - Runs are much faster: each step checks only that item's installed state locally, instead of re-checking every plugin online (quote Task 2a's measured before/after numbers).
+  - The running row shows a spinner and a per-item bar, and a dim status line sits under Quit.
+  - Esc cancels: finish the current item, or stop immediately; double-Esc stops immediately.
+  - `GET_HAIGGOH_STEP_TIMEOUT`: seconds WITHOUT OUTPUT before a step is stopped (default 600). An invalid value refuses to run.
+  - A closing report appears, and the list refreshes in the background.
+  - The ship gate now runs the TUI pilot tests.
 - [ ] **Step 2:** Regenerate `portable/`, then `python3 scripts/build-portable.py --check; echo EXIT:$?` ⇒ `EXIT:0`. `grep -rn '"version"' .claude-plugin/plugin.json portable/.claude-plugin/plugin.json` ⇒ both `0.11.0`.
 - [ ] **Step 3: Screenshots** (playbook rule 5). Write a throwaway script OUTSIDE the repo (`$TMPDIR/gh-shots.py`) that drives `make_app` + `GatedRunner` with `run_test(size=(100, 40))` and calls `app.save_screenshot(<path>)` in four states: running with two items, `CancelConfirmScreen`, `CancelModeScreen`, `RunReportScreen`. Convert each with `rsvg-convert -o x.png x.svg`, Read each PNG, and compare it against the spec mockups: the spinner and bar right after the name, ONE blank row between `Q) Quit` and the dim line, the dim line grey and single-line. Note any mismatch, fix it, and re-shoot.
 - [ ] **Step 4: Full gate.** Run the exact `test_cmd` from `rtc-ship.json`: `sh -c '<test_cmd>' > /tmp/gh-gate-final.log 2>&1; echo EXIT:$?` ⇒ `EXIT:0`, and the TUI half reports 0 skipped. Quote both summary lines.
@@ -473,13 +549,15 @@ def test_required_clean(self):
 - **`proc.terminate()` instead of `killpg`.** Child dies, `brew`'s grandchild keeps the lock → "cancelled" but still running. Detect: mutation 3 (grandchild survives ⇒ RED).
 - **`call_from_thread` per output line.** Works in tests with 3 lines; a chatty brew blocks the worker on the UI → slow runs, laggy UI. Rule: output goes through `note_output` only. Detect: `test_flood_of_output_keeps_ui_responsive`.
 - **Invalid timeout silently becomes 600.** Looks friendly; the user's explicit setting is ignored without notice. Rule: Deviation B6. Detect: Task 4 discriminant, `test_invalid_timeout_refuses_to_run`.
+- **The "local" re-read quietly fetches.** It reuses `tool_status` because it already exists → tests stay green, but each step still makes a GitHub call and runs stay slow. Rule: `tool_installed` split; `reread_row` never calls `tool_status`. Detect: `test_no_network` and Task 2a's timing receipt.
+- **Relaunching after a failed self-update.** It looks symmetric with success, but the new code never landed, so the relaunch runs the old code and loses the report. Rule: changed B8 (relaunch only on ok). Detect: `test_failed_self_update_continues_inline`.
 - **Hand-editing `portable/plugin.json`.** Version looks bumped; the freshness test or `--check` fails at ship, or the generated file drifts. Rule: regenerate. Detect: Task 8 Step 2 `--check`.
 - **Editing the plugin cache to "test the installed copy".** Passes locally, reverted by the next update, never shipped. Rule: system instruction 2.
 - **Reading a branch push as permission to merge.** Rule: authority matrix; Task 9 Step 1 asks first.
 - **Pipeline hides the exit code** (`pytest … | tail`). Rule: redirect to a file and `echo EXIT:$?` (every gate step is written that way).
 - **Switching the canonical checkout to the feature branch to dogfood.** Changes what the user's launcher runs. Rule: system instruction 2; dogfood only after ship (Task 9).
 
-**Cannot be tested safely here:** a real `brew` lock left by an immediate cancel (R1); a real execv self-update mid-run (B8; unchanged code path). Both are named in the report and not claimed.
+**Cannot be tested safely here:** a real `brew` lock left by an immediate cancel (R1); a real execv self-update mid-run (the pilot test uses a fake `execv`; the real relaunch is checked only in Task 9's live dogfood). Both are named in the report and not claimed.
 
 ## 🏁 Final review and delivery (executor fills in)
 
