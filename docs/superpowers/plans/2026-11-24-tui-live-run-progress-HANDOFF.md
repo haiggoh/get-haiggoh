@@ -62,3 +62,4 @@ The full design is in the spec, `docs/superpowers/specs/2026-11-23-get-haiggoh-t
 
 - Phase 0 · (no commit) · `270 passed, 2 skipped` / `121 passed` · n/a — Opus, 2026-11-24
 - Task 1 · 9a808ed · gate `EXIT:0`: `274 passed, 2 skipped` (pipx) / `125 passed, 0 skipped` (venv, REQUIRE_TEXTUAL=1) · discriminants RED: `EXIT:4` textual-less pipx names textual; planted skip ⇒ `EXIT:1` "1 skipped" — Le Chonk, 2026-11-24
+- Task 2 · 0b7f14a · `24 passed` test_runner.py; full `286 passed, 2 skipped` (pipx) / `137 passed, 0 skipped` (venv) · discriminants RED: after_current-without-name-check ⇒ `EXIT:1` "'skipped' not found … the two-step item finishes"; local-mode-calls-reread ⇒ `EXIT:1` "AssertionError: network sweep" — Le Chonk, 2026-11-24
