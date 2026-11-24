@@ -6,6 +6,7 @@ callables are injectable.
 """
 from __future__ import annotations
 
+import dataclasses
 import importlib.util
 import json
 import subprocess
@@ -70,14 +71,10 @@ def plugin_rows(cached: bool) -> list[Row]:
     return rows
 
 
-def tool_status(tool: dict, run=subprocess.run, fetch=None) -> tuple[str | None, str | None, dict | None]:
-    """(installed, latest, diagnostic) for a related tool. Installed: `brew list --versions
-    <short formula name>` when brew is present, else the tool's own version_cmd. Latest: the
-    repo's latest GitHub release tag minus 'v'. A failed latest fetch sets `diagnostic` and
-    returns latest=None — never raises."""
-    c = _core()
-    if fetch is None:
-        fetch = c.fetch_url
+def tool_installed(tool: dict, run=subprocess.run) -> str | None:
+    """The installed half of tool_status, LOCAL only — never fetches: `brew list
+    --versions <short formula name>` when brew is present, else the tool's own
+    version_cmd."""
     installed: str | None = None
     formula = tool.get("formula")
     if formula:
@@ -97,6 +94,17 @@ def tool_status(tool: dict, run=subprocess.run, fetch=None) -> tuple[str | None,
                     installed = r.stdout.strip().split()[-1]
             except (FileNotFoundError, OSError):
                 pass
+    return installed
+
+
+def tool_status(tool: dict, run=subprocess.run, fetch=None) -> tuple[str | None, str | None, dict | None]:
+    """(installed, latest, diagnostic) for a related tool. Latest: the repo's latest
+    GitHub release tag minus 'v'. A failed latest fetch sets `diagnostic` and returns
+    latest=None — never raises."""
+    c = _core()
+    if fetch is None:
+        fetch = c.fetch_url
+    installed = tool_installed(tool, run=run)
     latest: str | None = None
     diagnostic: dict | None = None
     repo = tool.get("repo") or ""
@@ -114,6 +122,28 @@ def tool_status(tool: dict, run=subprocess.run, fetch=None) -> tuple[str | None,
             "fix": f"check connectivity, then: curl -fsSL {url}",
         }
     return installed, latest, diagnostic
+
+
+def reread_row(before: Row, run=subprocess.run) -> Row:
+    """Re-derive ONE row's installed/status from LOCAL state only — never fetches.
+    `latest` and `diagnostic` carry over from `before`: the app already holds the
+    latest versions, and a run must not touch the network (the full sweep measures
+    8.5–11.1 s; this local per-step re-read is the replacement inside a run)."""
+    c = _core()
+    if before.section == "plugin":
+        registry = c.load_installed(c.load_json(c.installed_plugins_path()))
+        installed = (registry.get(before.name) or {}).get("version")
+    else:
+        installed = tool_installed(before.tool or {}, run=run)
+    if installed is None:
+        status = "missing"
+    elif before.latest and c.remote_is_newer(installed, before.latest):
+        status = "outdated"
+    elif before.status == "unverified":
+        status = "unverified"
+    else:
+        status = "current"
+    return dataclasses.replace(before, installed=installed, status=status)  # type: ignore[arg-type]
 
 
 def _tool_row(tool: dict, marks: dict[str, str]) -> Row:

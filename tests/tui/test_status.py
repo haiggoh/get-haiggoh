@@ -18,6 +18,7 @@ sys.path.insert(0, str(ROOT))
 
 import get_haiggoh_core as c  # noqa: E402
 from get_haiggoh_tui import status as st  # noqa: E402
+from get_haiggoh_tui.inventory import Row  # noqa: E402
 
 WORLD_PLUGINS = [
     {"name": "get-haiggoh", "category": "meta", "description": "self",
@@ -182,6 +183,103 @@ class BuildRowsTests(unittest.TestCase):
             names = [r.name for r in rows]
             self.assertIn("mac-claude-migration", names)  # tools appended after plugins
             self.assertLess(names.index("get-haiggoh"), names.index("waypoints"))
+
+
+def _plugin_row(name, status, installed=None, latest=None):
+    return Row(name=name, section="plugin", mark="🧭", description="d", adds="a",
+               installed=installed, latest=latest, status=status, diagnostic=None,
+               menu=None, tool=None)
+
+
+def _tool_row(name, status, tool, installed=None, latest=None):
+    return Row(name=name, section="tool", mark="🤝", description="d", adds="a",
+               installed=installed, latest=latest, status=status, diagnostic=None,
+               menu=None, tool=tool)
+
+
+class RereadRowTests(unittest.TestCase):
+    """reread_row: one row's installed/status re-derived from LOCAL state only."""
+
+    def test_plugin_updated_becomes_current(self):
+        with tempfile.TemporaryDirectory() as d:
+            env = _world(Path(d), installed={"waypoints": "0.15.0"})
+            with mock.patch.dict(os.environ, env):
+                before = _plugin_row("waypoints", "outdated", "0.14.3", "0.15.0")
+                after = st.reread_row(before)
+        self.assertEqual(after.installed, "0.15.0")
+        self.assertEqual(after.status, "current")
+        self.assertEqual(after.latest, "0.15.0", "latest carries over from before")
+
+    def test_plugin_removed_becomes_missing(self):
+        with tempfile.TemporaryDirectory() as d:
+            env = _world(Path(d), installed={"get-haiggoh": "0.9.4"})
+            with mock.patch.dict(os.environ, env):
+                before = _plugin_row("waypoints", "current", "0.14.3", "0.14.3")
+                after = st.reread_row(before)
+        self.assertIsNone(after.installed)
+        self.assertEqual(after.status, "missing")
+
+    def test_tool_uses_brew_list_only(self):
+        ran = []
+
+        def run(args, **k):
+            ran.append(list(args))
+            if args[:3] == ["brew", "list", "--versions"]:
+                return _R(0, "human-shell 1.2.0\n")
+            return _R(1)
+
+        tool = dict(TOOL, name="human-shell", formula="haiggoh/tap/human-shell",
+                    version_cmd=None)
+        before = _tool_row("human-shell", "missing", tool, installed=None, latest="1.3.0")
+
+        def fetch_boom(*a, **k):
+            raise AssertionError("fetch attempted")
+
+        with mock.patch.object(c, "fetch_url", fetch_boom):
+            after = st.reread_row(before, run=run)
+        self.assertEqual(after.installed, "1.2.0")
+        self.assertEqual(after.status, "outdated", "1.2.0 is behind latest 1.3.0")
+        self.assertFalse(any("curl" in " ".join(a) or "http" in " ".join(a) for a in ran),
+                         "no network argvs: %r" % (ran,))
+
+    def test_no_network(self):
+        with tempfile.TemporaryDirectory() as d:
+            env = _world(Path(d), installed={"waypoints": "0.15.0"})
+            with mock.patch.dict(os.environ, env):
+                with mock.patch.object(c, "fetch_url", side_effect=AssertionError("network")), \
+                     mock.patch.object(st, "tool_status",
+                                       side_effect=AssertionError("reread_row must not call tool_status")):
+                    pa = st.reread_row(_plugin_row("waypoints", "outdated", "0.14.3", "0.15.0"),
+                                       run=lambda *a, **k: _R(1))
+                    ta = st.reread_row(_tool_row("human-shell", "missing",
+                                                 dict(TOOL, name="human-shell"),
+                                                 installed=None, latest="1.3.0"),
+                                       run=lambda *a, **k: _R(1))
+        self.assertEqual(pa.status, "current")
+        self.assertIsNone(ta.installed)
+        self.assertEqual(ta.status, "missing")
+
+    def test_unverified_stays_unverified_when_not_outdated(self):
+        with tempfile.TemporaryDirectory() as d:
+            env = _world(Path(d), installed={"waypoints": "0.15.0"})
+            with mock.patch.dict(os.environ, env):
+                before = _plugin_row("waypoints", "unverified", "0.15.0", "0.15.0")
+                after = st.reread_row(before)
+        self.assertEqual(after.status, "unverified", "unverified never silently becomes current")
+
+    def test_tool_status_still_reports_installed(self):
+        # the tool_installed refactor kept behaviour (also covered by ToolStatusTests)
+        def run(args, **k):
+            if args[:3] == ["brew", "list", "--versions"]:
+                return _R(0, "mac-claude-migration 0.1.5\n")
+            return _R(1)
+
+        def fetch(url, timeout):
+            return json.dumps({"tag_name": "v0.1.5"}).encode()
+
+        installed, latest, diag = st.tool_status(TOOL, run=run, fetch=fetch)
+        self.assertEqual(installed, "0.1.5")
+        self.assertIsNone(diag)
 
 
 if __name__ == "__main__":
