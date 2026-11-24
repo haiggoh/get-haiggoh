@@ -1,0 +1,56 @@
+# HANDOFF — get-haiggoh 0.11.0 live run progress → GLM 5.3 Flash (max effort), 2026-11-24
+
+## 1. Why this exists
+
+A paid Opus session wrote and committed the plan, after the user decided its open design questions (2026-11-24, recorded in the plan's "Deviations"). It then ran Phase 0. The user asked for execution to be handed to a free GLM 5.3 Flash session at max effort. Nothing failed; this is a planned handover, not a recovery.
+
+## 2. State (verified 2026-11-24 15:2x CET)
+
+- Worktree `~/ClaudeWorkspace/get-haiggoh/.wt/tui-live-run-progress`, branch `feat/tui-live-run-progress`. Clean, and it contains `origin/main` (`a4a0763`). The canonical checkout `~/ClaudeWorkspace/get-haiggoh` is on `main`; leave it there.
+- Commits on the branch:
+  - `7f46276` the spec
+  - `128a2f3` the plan
+  - `c6fcc38` the plan with the user's decisions folded in
+  - (this handoff's commit)
+- **Phase 0 is DONE.** Receipt 0:
+  - Baseline 1, `pytest -q -n auto tests -p no:cacheprovider`: `EXIT1:0`, `270 passed, 2 skipped in 9.66s`. The 2 skips are `tests/tui/test_app_pilot.py:17` and `tests/tui/test_tui_0102.py:23`, both `could not import 'textual'`; that is the gap Task 1 closes.
+  - Baseline 2, `~/.local/share/get-haiggoh/tui-venv/bin/python -m pytest -q -rs tests/tui -p no:cacheprovider`: `EXIT2:0`, `121 passed in 9.36s`, 0 skipped.
+  - Textual 3.7.1 in the TUI venv. `README.md` does not describe the run screen (grep empty), so Task 8 needs no README change.
+- No pre-existing failures.
+
+## 3. The goal (verbatim from the user, 2026-11-23)
+
+> the interactive menu of get-haiggoh has an update feature (update then select all and update) but it currently shows now spinner, no progress, no verbose output of what's happening. for all the user knows the app could be wedged and completely frozen since it doesn't accept any clicks while its updating and hover doesn't react. that's a bad user experience, we have to overhaul that system to become a lot more user friendly and responsive. especially when installing multiple it needs to be clearly visible which is currently being installed (spinner and progress bar after the name in the same row …
+
+The full design is in the spec, `docs/superpowers/specs/2026-11-23-get-haiggoh-tui-live-run-progress-design.md`. The plan is the executable form: `docs/superpowers/plans/2026-11-24-tui-live-run-progress.md`. **The plan is authoritative where it deviates from the spec.**
+
+## 4. Standing rules (adopt for the whole session)
+
+1. Autonomous: decide and record instead of asking; stop only for forks that cannot be weighed. Task 9 is the one planned stop: it asks the user.
+2. Work only in the worktree above. Never switch the branch of `~/ClaudeWorkspace/get-haiggoh`. Never edit `~/.claude/plugins/cache/**`.
+3. Commit every task, staged **by path** (never `git add -A` / `git add .`), and check `git diff --cached --stat` first. Every commit ends with exactly these two trailer lines:
+   ```
+   Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+   Co-Authored-By: GLM 5.3 <noreply@z.ai>
+   ```
+   (GLM 5.3 Flash commits as `GLM 5.3`, by the user's ruling; never invent a "GLM 5.3 Flash" trailer.)
+4. Push the branch only when the plan says so (end of Task 8). **Never merge, tag, release, run `rtc-ship`, `claude plugin update` or `get-haiggoh apply`.** Those need the user's explicit go at Task 9.
+5. TDD every change: write the test, see it fail for the right reason, implement, see it pass. Run every discriminant the plan lists and quote its RED line. Never weaken a test to get green.
+6. Pilot tests run ONLY under `~/.local/share/get-haiggoh/tui-venv/bin/python -m pytest … -rs`. A skipped pilot is a failed receipt.
+7. Never pipe a test run into `tail`/`head` before reading its exit code. Redirect to a file, `echo EXIT:$?`, then read the file.
+8. At each QC milestone (QC-1…QC-4 in the plan), dispatch an independent review with `~/ClaudeWorkspace/free-agents/bin/free-agent-tool.py` (out of family from GLM; attach the files through `"files"`) and check every finding against the real code. Reviewers hallucinate file names and line numbers.
+9. Resolve model and roster facts when you need them, from the tools (`free-agent-tool.py --list`, `remote-session.sh --list`), never from memory.
+10. Never run `remote-session.sh --stop`, never start another remote session, never kill anything listening on 4141–4151 (one of those is the proxy YOU run on). The only processes you may kill are the test children your own tests spawn.
+11. Use the native Read/Edit/Write tools for files. The shell tool is `Bash` (capital B). Edit anchors come from a FRESH Read: whole lines, exact indentation.
+12. Never type the home directory out in commands; write `~` or `$HOME`.
+13. **Record progress here.** At every task receipt, append one line to §6 and include this file in that task's commit. A kill then loses at most one task.
+14. You ARE the successor of this handoff. If you die and a later session reads this, it continues from §5; it does not launch yet another session.
+15. Branch push failures: `git 100001` / `gh -26276` under a sandbox are SANDBOX errors, not auth errors; the push may already have succeeded. Check with `git ls-remote`.
+
+## 5. Next action
+
+Start at **Task 1** of `docs/superpowers/plans/2026-11-24-tui-live-run-progress.md`. Read the whole plan (and the spec it cites) first. Phase 0 is done (§2): do not redo it, but do quote §2's baseline lines in your Task 1 receipt for comparison. Run Tasks 1 → 2 → 2a → 3 → 4 → 5 → 6 → 7 → 8 in order, then Task 9 Step 1 (ask the user) and STOP there.
+
+## 6. Progress log (append one line per receipt: task · commit · pass line · discriminant RED line)
+
+- Phase 0 · (no commit) · `270 passed, 2 skipped` / `121 passed` · n/a — Opus, 2026-11-24
