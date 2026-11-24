@@ -118,7 +118,7 @@ class RunStepsTests(unittest.TestCase):
     def test_noted_step_is_shown_not_run(self):
         s = step("some-tool", "install", route="brew", argv=[], note="needs 🍺 Homebrew")
         ex = FakeExec()
-        before = [row("some-tool", "missing", section=None) if False else row("some-tool", "missing")]
+        before = [row("some-tool", "missing")]
         results = rn.run_steps([s], execute=ex, reread=Reread(before, before))
         self.assertEqual(ex.calls, [], "argv=[] step must not be executed")
         self.assertIn("Homebrew", results[0].output)
@@ -328,9 +328,17 @@ class LiveRunTests(unittest.TestCase):
         steps = [step("item-a", "update"), step("item-b", "update")]
         fs = FakeStream(results_by_name={"item-a": rn.ExecResult(-15, "partial", timed_out=True)})
         rows = [row("item-a", "outdated", "1.0", "2.0"), row("item-b", "outdated", "1.0", "2.0")]
-        results = rn.run_steps(steps, stream=fs, rows=rows, reread_one=self._bump)
+        seen = []
+
+        def reread_one(b):
+            seen.append(b)
+            return self._bump(b)
+
+        results = rn.run_steps(steps, stream=fs, rows=rows, reread_one=reread_one)
         self.assertEqual(results[0].outcome, "timed_out")
         self.assertFalse(results[0].ok)
+        self.assertIsNotNone(results[0].after_row, "timed_out still re-reads state for the row")
+        self.assertEqual(len(seen), 2, "one reread per step, timed_out included")
         self.assertEqual(len(results), 2, "the queue continues after a timeout")
         self.assertEqual(len(fs.calls), 2)
 
@@ -400,6 +408,67 @@ class LiveRunTests(unittest.TestCase):
         self.assertEqual(ctl.stop, "immediate")
         ctl.request_stop("after_current")
         self.assertEqual(ctl.stop, "immediate", "never downgrades")
+
+    def test_all_routes_stream_when_execute_none(self):
+        git_s = step("item-git", "install", route="git", argv=["git", "clone", "https://x"])
+        rel_s = step("item-rel", "install", route="release-installer", argv=[])
+        fs = FakeStream()
+        rows = [row("item-git", "missing"), row("item-rel", "missing")]
+        with mock.patch.object(rn, "_prepare_release_installer",
+                               lambda s, r: ("", Path("/tmp/asset.sh"))):
+            rn.run_steps([git_s, rel_s], stream=fs, rows=rows, reread_one=self._bump)
+        self.assertEqual(fs.calls, [["git", "clone", "https://x"], ["/bin/bash", "/tmp/asset.sh"]],
+                         "git and release-installer argvs go through the stream seam too")
+
+    def test_skipped_steps_do_not_reread_and_have_empty_output(self):
+        steps = [step("item-a", "update"), step("item-b", "update"), step("item-c", "update")]
+        control = rn.RunControl()
+        fs = FakeStream(results_by_name={"item-a": rn.ExecResult(None, "", cancelled=True)})
+        seen = []
+
+        def reread_one(b):
+            seen.append(b)
+            return self._bump(b)
+
+        def on_event(e):
+            if e[0] == "start" and e[1] is steps[0]:
+                control.request_stop("immediate")
+
+        rows = [row(n, "outdated", "1.0", "2.0") for n in ("item-a", "item-b", "item-c")]
+        results = rn.run_steps(steps, stream=fs, on_event=on_event, control=control,
+                               rows=rows, reread_one=reread_one)
+        self.assertEqual([r.outcome for r in results], ["cancelled", "skipped", "skipped"])
+        self.assertEqual(results[1].output, "")
+        self.assertEqual(results[2].output, "")
+        self.assertEqual(len(seen), 1, "only the run step re-reads; skipped steps never do")
+
+    def test_local_mode_rereads_only_the_current_steps_row(self):
+        fa_plugin = step("free-agents", "update", route="plugin")
+        fa_brew = step("free-agents", "update", route="brew",
+                       argv=["brew", "upgrade", "haiggoh/tap/free-agents"])
+        wp = step("waypoints", "update")
+        seen = []
+
+        def reread_one(b):
+            seen.append(b)
+            return self._bump(b)
+
+        rows = [row("free-agents", "outdated", "0.1", "0.2"),
+                row("waypoints", "outdated", "0.14.3", "0.15.0")]
+        rn.run_steps([fa_plugin, fa_brew, wp], stream=FakeStream(), rows=rows, reread_one=reread_one)
+        self.assertEqual([b.name for b in seen], ["free-agents", "free-agents", "waypoints"],
+                         "exactly one reread per step, and it is that step's row")
+        self.assertEqual(seen[0].installed, "0.1")
+        self.assertEqual(seen[1].installed, "0.2",
+                         "the item's second step sees the first step's AFTER row as its before-row")
+
+    def test_timed_out_wins_over_cancelled(self):
+        fs = FakeStream(results_by_name={
+            "item-a": rn.ExecResult(-15, "", timed_out=True, cancelled=True)})
+        rows = [row("item-a", "outdated", "1.0", "2.0")]
+        results = rn.run_steps([step("item-a", "update")], stream=fs, rows=rows,
+                               reread_one=self._bump)
+        self.assertEqual(results[0].outcome, "timed_out", "timed_out is checked first")
 
 
 if __name__ == "__main__":

@@ -267,6 +267,16 @@ class RereadRowTests(unittest.TestCase):
                 after = st.reread_row(before)
         self.assertEqual(after.status, "unverified", "unverified never silently becomes current")
 
+    def test_diagnostic_carries_over(self):
+        with tempfile.TemporaryDirectory() as d:
+            env = _world(Path(d), installed={"waypoints": "0.15.0"})
+            with mock.patch.dict(os.environ, env):
+                before = _plugin_row("waypoints", "unverified", "0.15.0", "0.15.0")
+                before.diagnostic = {"url": "u", "problem": "fetch failed"}
+                after = st.reread_row(before)
+        self.assertEqual(after.diagnostic, {"url": "u", "problem": "fetch failed"},
+                         "diagnostic carries over from the before row")
+
     def test_tool_status_still_reports_installed(self):
         # the tool_installed refactor kept behaviour (also covered by ToolStatusTests)
         def run(args, **k):

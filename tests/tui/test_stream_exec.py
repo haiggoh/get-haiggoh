@@ -11,6 +11,7 @@ Usage: pytest tests/tui/test_stream_exec.py -q --durations=5
 """
 import os
 import sys
+import tempfile
 import threading
 import time
 import unittest
@@ -81,6 +82,15 @@ class StreamExecTests(unittest.TestCase):
 
     def test_immediate_cancel_kills(self):
         control = rn.RunControl()
+        gpids = []
+
+        def on_line(line):
+            if line.strip().isdigit():
+                gpids.append(int(line.strip()))
+
+        code = ("import subprocess,sys,time;"
+                "p=subprocess.Popen([sys.executable,'-c','import time;time.sleep(30)']);"
+                "print(p.pid,flush=True);time.sleep(30)")
 
         def stopper():
             time.sleep(0.3)
@@ -89,12 +99,55 @@ class StreamExecTests(unittest.TestCase):
         th = threading.Thread(target=stopper)
         th.start()
         t0 = time.monotonic()
-        res = rn.stream_execute(_child("import time; time.sleep(30)"),
-                                on_line=lambda line: None, control=control)
+        res = rn.stream_execute(_child(code), on_line=on_line, control=control)
         elapsed = time.monotonic() - t0
         th.join()
         self.assertTrue(res.cancelled)
         self.assertLess(elapsed, 1.5)
+        self.assertIsNone(control._proc, "detach() ran in the finally")
+        deadline = time.monotonic() + 1.0
+        while True:
+            try:
+                os.kill(gpids[0], 0)
+            except ProcessLookupError:
+                break  # the process GROUP died — killpg, not just the child
+            if time.monotonic() > deadline:
+                self.fail("grandchild survived — kill_current must killpg the group")
+            time.sleep(0.05)
+
+    def test_cancel_after_clean_exit_is_not_cancelled(self):
+        control = rn.RunControl()
+
+        def stopper():
+            time.sleep(0.3)
+            control.request_stop("immediate")
+
+        th = threading.Thread(target=stopper)
+        th.start()
+        res = rn.stream_execute(_child("print('bye', flush=True)"), on_line=lambda line: None,
+                                control=control)
+        th.join()
+        self.assertEqual(res.returncode, 0)
+        self.assertFalse(res.cancelled, "only death BY A SIGNAL marks cancelled")
+
+    def test_permission_denied_is_a_result_not_an_exception(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "noperm.sh"
+            p.write_text("#!/bin/sh\n")
+            p.chmod(0o000)
+            res = rn.stream_execute([str(p)], on_line=lambda line: None)
+        self.assertIsNone(res.returncode)
+        self.assertIn("denied", res.output.lower())
+
+    def test_sigkill_escalation_when_sigterm_ignored(self):
+        code = ("import signal,time; signal.signal(signal.SIGTERM, signal.SIG_IGN); "
+                "print('ready', flush=True); time.sleep(5)")
+        t0 = time.monotonic()
+        res = rn.stream_execute(_child(code), on_line=lambda line: None,
+                                timeout=0.5, kill_grace=0.2)
+        elapsed = time.monotonic() - t0
+        self.assertTrue(res.timed_out)
+        self.assertLess(elapsed, 3.0, "SIGTERM ignored ⇒ SIGKILL after kill_grace")
 
     def test_non_utf8_and_no_newline(self):
         lines = []
