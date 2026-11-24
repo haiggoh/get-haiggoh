@@ -471,5 +471,36 @@ class LiveRunTests(unittest.TestCase):
         self.assertEqual(results[0].outcome, "timed_out", "timed_out is checked first")
 
 
+class TimeoutEnvTests(unittest.TestCase):
+    """GET_HAIGGOH_STEP_TIMEOUT: seconds WITHOUT OUTPUT before a step stops.
+    Unset/empty ⇒ 600; <= 0 ⇒ disabled (None); set-but-invalid raises loudly."""
+
+    def test_unset_defaults_to_600(self):
+        self.assertEqual(rn.DEFAULT_STEP_TIMEOUT, 600.0)
+        self.assertEqual(rn.step_timeout_from_env({}), 600.0)
+
+    def test_numeric_values(self):
+        self.assertEqual(rn.step_timeout_from_env({"GET_HAIGGOH_STEP_TIMEOUT": "90"}), 90.0)
+        self.assertEqual(rn.step_timeout_from_env({"GET_HAIGGOH_STEP_TIMEOUT": "2.5"}), 2.5)
+
+    def test_empty_is_default(self):
+        self.assertEqual(rn.step_timeout_from_env({"GET_HAIGGOH_STEP_TIMEOUT": ""}), 600.0)
+
+    def test_zero_and_negative_disable(self):
+        self.assertIsNone(rn.step_timeout_from_env({"GET_HAIGGOH_STEP_TIMEOUT": "0"}))
+        self.assertIsNone(rn.step_timeout_from_env({"GET_HAIGGOH_STEP_TIMEOUT": "-1"}))
+
+    def test_invalid_raises_naming_var_and_value(self):
+        with self.assertRaises(ValueError) as cm:
+            rn.step_timeout_from_env({"GET_HAIGGOH_STEP_TIMEOUT": "abc"})
+        self.assertIn("GET_HAIGGOH_STEP_TIMEOUT", str(cm.exception))
+        self.assertIn("abc", str(cm.exception))
+
+    def test_non_finite_raises(self):
+        for bad in ("nan", "inf", "-inf"):
+            with self.assertRaises(ValueError, msg=bad):
+                rn.step_timeout_from_env({"GET_HAIGGOH_STEP_TIMEOUT": bad})
+
+
 if __name__ == "__main__":
     unittest.main()
