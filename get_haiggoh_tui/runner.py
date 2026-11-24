@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import fnmatch
 import json
+import math
 import os
 import signal
 import subprocess
@@ -16,6 +17,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Mapping
 
 from .inventory import Row
 from .routes import Step
@@ -23,6 +25,7 @@ from .status import build_rows
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PENDING_SCHEMA = 1
+DEFAULT_STEP_TIMEOUT = 600.0
 
 
 @dataclass
@@ -267,6 +270,28 @@ def stream_execute(argv, *, on_line, control=None, timeout=None, kill_grace=2.0)
     cancelled = (control is not None and control.stop == "immediate"
                  and proc.returncode is not None and proc.returncode < 0)
     return ExecResult(proc.returncode, output, timed_out=timed_out, cancelled=cancelled)
+
+
+def step_timeout_from_env(env: Mapping[str, str] = os.environ) -> float | None:
+    """GET_HAIGGOH_STEP_TIMEOUT = seconds WITHOUT OUTPUT before a step is stopped
+    (idle limit; the clock resets on every output line). Unset/empty ⇒
+    DEFAULT_STEP_TIMEOUT (600); <= 0 ⇒ None (disabled); a set-but-invalid value
+    raises ValueError naming the variable and the raw value — never silently
+    falls back to the default."""
+    raw = env.get("GET_HAIGGOH_STEP_TIMEOUT")
+    if raw is None or raw == "":
+        return DEFAULT_STEP_TIMEOUT
+    try:
+        value = float(raw)
+    except ValueError:
+        raise ValueError(
+            f"GET_HAIGGOH_STEP_TIMEOUT={raw!r} is not a number") from None
+    if not math.isfinite(value):
+        raise ValueError(
+            f"GET_HAIGGOH_STEP_TIMEOUT={raw!r} is not a finite number") from None
+    if value <= 0:
+        return None
+    return value
 
 
 def run_steps(steps, execute=None, reread=build_rows, on_event=lambda e: None,
