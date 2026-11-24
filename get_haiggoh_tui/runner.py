@@ -8,12 +8,15 @@ from __future__ import annotations
 import fnmatch
 import json
 import os
+import signal
 import subprocess
 import tempfile
+import threading
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
+from .inventory import Row
 from .routes import Step
 from .status import build_rows
 
@@ -22,10 +25,68 @@ PENDING_SCHEMA = 1
 
 
 @dataclass
+class ExecResult:
+    returncode: int | None
+    output: str
+    timed_out: bool = False
+    cancelled: bool = False
+
+
+@dataclass
 class StepResult:
     step: Step
     ok: bool
     output: str
+    outcome: str = ""
+    after_row: Row | None = None
+
+    def __post_init__(self):
+        if not self.outcome:
+            self.outcome = "ok" if self.ok else "failed"
+
+    @property
+    def after_version(self) -> str | None:
+        return self.after_row.installed if self.after_row is not None else None
+
+
+class RunControl:
+    """Thread-safe stop handle shared between the UI thread and the run worker.
+    request_stop may upgrade after_current -> immediate, never downgrades."""
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._stop: str | None = None
+        self._proc = None
+
+    @property
+    def stop(self) -> str | None:
+        with self._lock:
+            return self._stop
+
+    def request_stop(self, mode: str) -> None:
+        with self._lock:
+            if self._stop != "immediate":
+                self._stop = mode
+        if mode == "immediate":
+            self.kill_current()
+
+    def attach(self, proc) -> None:
+        with self._lock:
+            self._proc = proc
+
+    def detach(self) -> None:
+        with self._lock:
+            self._proc = None
+
+    def kill_current(self) -> None:
+        with self._lock:
+            proc = self._proc
+        if proc is None:
+            return
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+        except ProcessLookupError:
+            pass
 
 
 def _core():
@@ -54,31 +115,39 @@ def _ok_from_state(step: Step, before, after) -> bool:
     return True
 
 
-def _run_release_installer(step: Step, row, execute) -> tuple[str, bool]:
+def _prepare_release_installer(step: Step, row) -> tuple[str, Path | None]:
     """Download the fallback asset (glob matched against the latest release's assets)
-    into a fresh tempdir and run it by path."""
+    into a fresh tempdir. (error_output, asset_path) — asset_path None on failure."""
     c = _core()
     tool = (row.tool or {}) if row else {}
     fallback = tool.get("fallback") or {}
     pattern = fallback.get("asset")
     repo = tool.get("repo")
     if not (pattern and repo):
-        return ("no release-installer asset declared", False)
+        return ("no release-installer asset declared", None)
     api = f"https://api.github.com/repos/{repo}/releases/latest"
     try:
         rel = json.loads(c.fetch_url(api, 10))
         assets = [a.get("name", "") for a in rel.get("assets", [])]
         name = next((a for a in assets if fnmatch.fnmatch(a, pattern)), None)
         if not name:
-            return (f"no asset matching {pattern!r} on the latest release", False)
+            return (f"no asset matching {pattern!r} on the latest release", None)
         url = f"https://github.com/{repo}/releases/download/{rel.get('tag_name')}/{name}"
         body = c.fetch_url(url, 60)
     except Exception as exc:
-        return (f"release-installer download failed: {exc}", False)
+        return (f"release-installer download failed: {exc}", None)
     d = tempfile.mkdtemp(prefix="get-haiggoh-installer-")
     asset = Path(d) / name
     asset.write_bytes(body)
     asset.chmod(0o755)
+    return ("", asset)
+
+
+def _run_release_installer(step: Step, row, execute) -> tuple[str, bool]:
+    """Legacy path: download the fallback asset and run it by path with `execute`."""
+    err, asset = _prepare_release_installer(step, row)
+    if asset is None:
+        return (err, False)
     r = execute(["/bin/bash", str(asset)], capture_output=True, text=True)
     return ((r.stdout or "") + (r.stderr or ""), True)
 
@@ -108,37 +177,107 @@ def _touch_skip_list(step: Step, ok: bool) -> None:
     c.save_skip_list(path, skip)
 
 
-def run_steps(steps, execute=subprocess.run, reread=build_rows, on_event=lambda e: None):
+def stream_execute(argv, *, on_line, control=None, timeout=None, kill_grace=2.0):
+    """Task 3 implements the real streaming executor here; until then the default
+    stream path is visibly unbuilt rather than silently wrong."""
+    raise NotImplementedError("stream_execute lands in Task 3 of the live-run plan")
+
+
+def run_steps(steps, execute=None, reread=build_rows, on_event=lambda e: None,
+              control=None, timeout=None, stream=None, rows=None, reread_one=None):
     """Run every step even after a failure. `ok` is decided by re-reading state after
     each step (installed version changed as expected / row gone after uninstall),
-    never by the exit code alone."""
-    try:
-        rows = {r.name: r for r in reread(False)}
-    except Exception:
-        rows = {}
-    results: list[StepResult] = []
-    for step in steps:
-        on_event(("start", step))
-        if step.route == "release-installer":
-            output, ran = _run_release_installer(step, rows.get(step.name), execute)
-        elif step.route == "git":
-            r = execute(_git_argv(step, rows.get(step.name)), capture_output=True, text=True)
-            output, ran = (r.stdout or "") + (r.stderr or ""), True
-        elif step.argv:
-            r = execute(step.argv, capture_output=True, text=True)
-            output, ran = (r.stdout or "") + (r.stderr or ""), True
-        else:
-            output, ran = step.note or "not run", False
+    never by the exit code alone.
+
+    execute given ⇒ the legacy blocking path, byte-for-byte. execute=None ⇒ every
+    argv goes through `stream` (default stream_execute) with per-line ("output", …)
+    events. reread_one given ⇒ local mode: `rows` (required) are the before-rows and
+    only the current step's row is re-read after each step — `reread` is never called,
+    so a run makes no network calls. Otherwise the full reread(False) sweep runs
+    before and after each step, as before.
+    """
+    if reread_one is not None:
+        if rows is None:
+            raise ValueError("run_steps: rows= is required when reread_one is given")
+        rows_map = {r.name: r for r in rows}
+    else:
         try:
-            after_rows = {r.name: r for r in reread(False)}
+            rows_map = {r.name: r for r in reread(False)}
         except Exception:
-            after_rows = rows
-        ok = _ok_from_state(step, rows.get(step.name), after_rows.get(step.name))
+            rows_map = {}
+    stream_fn = stream if stream is not None else stream_execute
+    results: list[StepResult] = []
+    prev_name: str | None = None
+    for step in steps:
+        mode = control.stop if control is not None else None
+        if mode == "immediate" or (mode == "after_current" and prev_name is not None
+                                    and step.name != prev_name):
+            result = StepResult(step, False, "", outcome="skipped")
+            results.append(result)
+            on_event(("result", result))
+            continue
+        on_event(("start", step))
+        prev_name = step.name
+        before_row = rows_map.get(step.name)
+        res: ExecResult | None = None
+        output, ran = "", False
+        if execute is not None:
+            if step.route == "release-installer":
+                output, ran = _run_release_installer(step, before_row, execute)
+            elif step.route == "git":
+                r = execute(_git_argv(step, before_row), capture_output=True, text=True)
+                output, ran = (r.stdout or "") + (r.stderr or ""), True
+            elif step.argv:
+                r = execute(step.argv, capture_output=True, text=True)
+                output, ran = (r.stdout or "") + (r.stderr or ""), True
+            else:
+                output, ran = step.note or "not run", False
+        else:
+            def on_line(line, _step=step):
+                on_event(("output", _step, line))
+
+            if step.route == "release-installer":
+                err, asset = _prepare_release_installer(step, before_row)
+                if asset is None:
+                    output, ran = err, False
+                else:
+                    res = stream_fn(["/bin/bash", str(asset)], on_line=on_line,
+                                    control=control, timeout=timeout)
+            elif step.route == "git":
+                res = stream_fn(_git_argv(step, before_row), on_line=on_line,
+                                control=control, timeout=timeout)
+            elif step.argv:
+                res = stream_fn(list(step.argv), on_line=on_line, control=control,
+                                timeout=timeout)
+            else:
+                output, ran = step.note or "not run", False
+            if res is not None:
+                output, ran = res.output, True
+        if reread_one is not None:
+            try:
+                after = reread_one(before_row)
+            except Exception:
+                after = before_row
+            rows_map[step.name] = after
+            after_row = after
+        else:
+            try:
+                after_rows = {r.name: r for r in reread(False)}
+            except Exception:
+                after_rows = rows_map
+            rows_map = after_rows
+            after_row = after_rows.get(step.name)
+        if res is not None and res.timed_out:
+            ok, outcome = False, "timed_out"
+        elif res is not None and res.cancelled:
+            ok, outcome = False, "cancelled"
+        else:
+            ok, outcome = _ok_from_state(step, before_row, after_row), ""
         _touch_skip_list(step, ok)
-        result = StepResult(step, ok, output if ran else (step.note or output))
+        result = StepResult(step, ok, output if ran else (step.note or output),
+                            outcome=outcome, after_row=after_row)
         results.append(result)
         on_event(("result", result))
-        rows = after_rows
     return results
 
 
