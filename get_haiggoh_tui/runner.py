@@ -12,6 +12,7 @@ import signal
 import subprocess
 import tempfile
 import threading
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -177,10 +178,95 @@ def _touch_skip_list(step: Step, ok: bool) -> None:
     c.save_skip_list(path, skip)
 
 
+def _killpg(proc, sig) -> None:
+    try:
+        os.killpg(os.getpgid(proc.pid), sig)
+    except ProcessLookupError:
+        pass
+
+
 def stream_execute(argv, *, on_line, control=None, timeout=None, kill_grace=2.0):
-    """Task 3 implements the real streaming executor here; until then the default
-    stream path is visibly unbuilt rather than silently wrong."""
-    raise NotImplementedError("stream_execute lands in Task 3 of the live-run plan")
+    """Run argv with stdout+stderr streamed through on_line, split on \\n and \\r,
+    each piece decoded errors="replace"; a trailing piece without a newline is
+    still delivered. `timeout` is an IDLE limit: `timeout` seconds with no output
+    kills the whole process group (SIGTERM, then SIGKILL after kill_grace) and
+    returns timed_out=True. control.attach/detach bracket the run; when
+    control.stop == "immediate" and the process died by a signal, the result is
+    cancelled=True. Popen failures are results, never raised."""
+    try:
+        proc = subprocess.Popen(list(argv), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                stdin=subprocess.DEVNULL, start_new_session=True)
+    except FileNotFoundError:
+        return ExecResult(None, f"{argv[0]}: command not found")
+    except PermissionError as exc:
+        return ExecResult(None, str(exc))
+    lock = threading.Lock()
+    last_output = time.monotonic()
+    raw: list[bytes] = []
+
+    def _reader():
+        nonlocal last_output
+        out = proc.stdout
+        assert out is not None  # stdout=PIPE above
+        fd = out.fileno()
+        pending = b""
+        while True:
+            try:
+                block = os.read(fd, 4096)
+            except (OSError, ValueError):
+                break
+            if not block:
+                break
+            with lock:
+                last_output = time.monotonic()
+            raw.append(block)
+            pending += block
+            while pending:
+                cuts = [i for i in (pending.find(b"\n"), pending.find(b"\r")) if i != -1]
+                if not cuts:
+                    break
+                i = min(cuts)
+                piece, pending = pending[:i], pending[i + 1:]
+                text = piece.decode("utf-8", errors="replace")
+                if text:
+                    on_line(text)
+        if pending:
+            text = pending.decode("utf-8", errors="replace")
+            if text:
+                on_line(text)
+
+    reader = threading.Thread(target=_reader, daemon=True)
+    reader.start()
+    if control is not None:
+        control.attach(proc)
+    timed_out = False
+    try:
+        while True:
+            try:
+                proc.wait(0.05)
+                break
+            except subprocess.TimeoutExpired:
+                pass
+            if timeout is not None and timeout > 0:
+                with lock:
+                    idle = time.monotonic() - last_output
+                if idle >= timeout:
+                    timed_out = True
+                    _killpg(proc, signal.SIGTERM)
+                    try:
+                        proc.wait(kill_grace)
+                    except subprocess.TimeoutExpired:
+                        _killpg(proc, signal.SIGKILL)
+                        proc.wait()
+                    break
+    finally:
+        if control is not None:
+            control.detach()
+    reader.join(timeout=1.0)
+    output = b"".join(raw).decode("utf-8", errors="replace")
+    cancelled = (control is not None and control.stop == "immediate"
+                 and proc.returncode is not None and proc.returncode < 0)
+    return ExecResult(proc.returncode, output, timed_out=timed_out, cancelled=cancelled)
 
 
 def run_steps(steps, execute=None, reread=build_rows, on_event=lambda e: None,
