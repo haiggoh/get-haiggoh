@@ -189,6 +189,26 @@ class CancelTests(unittest.TestCase):
 
             asyncio.run(asyncio.wait_for(go(), 10))
 
+    def test_finish_run_pops_cancel_dialog_before_report(self):
+        with tempfile.TemporaryDirectory() as d:
+            runner = GatedRunner()
+            app = make_app(d, runner=runner)
+
+            async def go():
+                async with app.run_test() as pilot:
+                    await self._start(app, pilot)
+                    await _wait_started(runner)
+                    await pilot.press("escape")
+                    await pilot.pause()
+                    assert isinstance(app.screen, scr.CancelConfirmScreen)
+                    # the run finishes while the dialog is still open
+                    runner.release.set()
+                    await _wait_done(app)
+                    assert isinstance(app.screen, scr.RunReportScreen), \
+                        f"_finish_run must pop the cancel dialog, got {type(app.screen).__name__}"
+
+            asyncio.run(asyncio.wait_for(go(), 10))
+
     def test_ctrl_q_blocked_during_run(self):
         with tempfile.TemporaryDirectory() as d:
             runner = GatedRunner()
