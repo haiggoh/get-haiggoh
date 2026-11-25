@@ -15,7 +15,10 @@ Env:
   GET_HAIGGOH_TUI_PENDING_FILE  pending-run file (default ~/.claude/.get-haiggoh-tui-pending.json)
   GET_HAIGGOH_MENU_SCRIPT       plain-menu override (used by tests)
 
-The venv is rebuilt when sha256(tui-requirements.txt) differs from <venv>/.req-sha.
+The venv is rebuilt when sha256(tui-requirements.txt) differs from <venv>/.req-sha,
+and recreated when it was built on a Python below 3.10 (the pins need >= 3.10; macOS's
+own python3 is 3.9). It is built on the first Python >= 3.10 found — this interpreter,
+python3.N on PATH, Homebrew's — or, with uv installed, on one uv fetches itself.
 Any bootstrap failure prints ONE stderr line and execs the plain menu — setup never
 dead-ends.
 """
@@ -54,9 +57,68 @@ def venv_python(venv):
     return os.path.join(venv, "bin", "python")
 
 
+# The pins (markdown-it-py 4, platformdirs 4.12, truststore, ...) need Python >= 3.10.
+# macOS ships /usr/bin/python3 = 3.9, which is the FIRST python3 on a fresh Mac's PATH:
+# a venv built from it can never install them, so every launch fell back to the plain menu.
+MIN_PY = (3, 10)
+NEED_PY = ("the TUI needs Python >= 3.10 and none was found (macOS's own python3 is 3.9) "
+           "— install one with `brew install uv` (fetches Python itself) or "
+           "`brew install python`, then run get-haiggoh again")
+
+
+def py_version(exe):
+    """(major, minor) of an interpreter, or None when it cannot be run."""
+    try:
+        r = subprocess.run([exe, "-c", "import sys; print(*sys.version_info[:2])"],
+                           capture_output=True, text=True, timeout=15)
+        major, minor = r.stdout.split()[:2]
+        return (int(major), int(minor))
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None
+
+
+def base_python_candidates():
+    """Our own interpreter first, then the newest python3.N on PATH, then Homebrew's."""
+    found = [sys.executable]
+    for minor in range(20, MIN_PY[1] - 1, -1):
+        exe = shutil.which(f"python3.{minor}")
+        if exe:
+            found.append(exe)
+    found += ["/opt/homebrew/bin/python3", "/usr/local/bin/python3", shutil.which("python3")]
+    return list(dict.fromkeys(p for p in found if p))
+
+
+def find_base_python(candidates=None):
+    """First candidate at or above MIN_PY, or None."""
+    for exe in (base_python_candidates() if candidates is None else candidates):
+        v = py_version(exe)
+        if v is not None and v >= MIN_PY:
+            return exe
+    return None
+
+
+def venv_py_version(venv):
+    """(major, minor) the venv was built with, read from pyvenv.cfg (no subprocess);
+    None when there is no readable version."""
+    try:
+        with open(os.path.join(venv, "pyvenv.cfg"), encoding="utf-8") as f:
+            for line in f:
+                key, _, value = line.partition("=")
+                if key.strip() in ("version_info", "version"):
+                    major, minor = value.strip().split(".")[:2]
+                    return (int(major), int(minor))
+    except (OSError, ValueError):
+        pass
+    return None
+
+
 def venv_ok(venv):
-    """True when the venv has a python and its req stamp matches tui-requirements.txt."""
+    """True when the venv has a python at or above MIN_PY and its req stamp matches
+    tui-requirements.txt."""
     if not os.path.isfile(venv_python(venv)):
+        return False
+    v = venv_py_version(venv)
+    if v is None or v < MIN_PY:
         return False
     try:
         with open(os.path.join(venv, STAMP), encoding="utf-8") as f:
@@ -72,18 +134,37 @@ def _run(cmd):
                            f"{(r.stderr or r.stdout).strip()[:200]}")
 
 
+def create_venv(venv):
+    """(Re)build the venv on an interpreter >= MIN_PY, clearing whatever is there.
+    uv first (it can download a Python when none is installed), else stdlib venv.
+    Refuses to clear a non-empty directory that is not a venv (an override path)."""
+    if os.path.isdir(venv) and os.listdir(venv) and \
+            not os.path.isfile(os.path.join(venv, "pyvenv.cfg")):
+        raise RuntimeError(f"{venv} is not empty and not a venv — refusing to clear it")
+    base = find_base_python()
+    uv = shutil.which("uv")
+    if uv:
+        try:
+            _run([uv, "venv", "--clear", "--python",
+                  base or ">={}.{}".format(*MIN_PY), venv])
+            return
+        except RuntimeError:
+            if not base:
+                raise
+    if not base:
+        raise RuntimeError(NEED_PY)
+    _run([base, "-m", "venv", "--clear", venv])
+
+
 def ensure_venv(venv):
     """Create/refresh the private venv and install the pins; rewrite .req-sha.
-    uv when present, else python3 -m venv + pip. Raises RuntimeError on failure."""
+    A missing venv, or one built on a Python below MIN_PY, is rebuilt first.
+    Raises RuntimeError on failure."""
     if venv_ok(venv):
         return
-    if not os.path.isdir(venv):
-        os.makedirs(venv, exist_ok=True)
-        uv = shutil.which("uv")
-        if uv:
-            _run([uv, "venv", venv])
-        else:
-            _run(["python3", "-m", "venv", venv])
+    v = venv_py_version(venv)
+    if not os.path.isfile(venv_python(venv)) or v is None or v < MIN_PY:
+        create_venv(venv)
     py = venv_python(venv)
     uv = shutil.which("uv")
     if uv:
