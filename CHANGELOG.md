@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.11.2] — 2026-11-25
+
+### Changed — docs only
+
+- README rewritten for beginners: a three-step "Get started" (add the marketplace, install
+  get-haiggoh, `/get-haiggoh`) comes first, then a key table for the menu and the terminal
+  commands. Troubleshooting and plugin-author notes moved under a "Reference" heading. No
+  code changes.
+
 ## [0.11.1] — 2026-11-25
 
 ### Fixed
