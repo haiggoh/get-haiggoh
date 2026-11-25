@@ -83,3 +83,53 @@ def test_help_documents_commands_flags_and_env(world):
     for needle in ("upgrade", "shims", "--on-collision", "GET_HAIGGOH_SHIM_DIR",
                    "GET_HAIGGOH_NO_SHIMS", "GET_HAIGGOH_SHIM_BACKUP_DIR"):
         assert needle in r.stdout, needle
+
+
+def path_edit_env(world):
+    env = {"HOME": str(world.home), "ZDOTDIR": str(world.home), "SHELL": "/bin/zsh",
+           "PATH": "/usr/bin:/bin"}
+    return env
+
+
+def run_cli_path(world, *args):
+    env = world.env()
+    env.pop("GET_HAIGGOH_NO_PATH_EDIT", None)
+    env.update(path_edit_env(world))
+    return subprocess.run([sys.executable, CLI, *args], capture_output=True, text=True,
+                          env=env, timeout=30, check=False)
+
+
+def test_shims_apply_puts_the_shim_dir_on_path(world):
+    world.plugin("waypoints", "0.12.0", ["waypoints"])
+    r = run_cli_path(world, "shims", "apply")
+    assert r.returncode == 0, r.stderr
+    assert "to your PATH in ~/.zprofile" in r.stdout
+    assert "get-haiggoh PATH" in (world.home / ".zprofile").read_text()
+
+
+def test_shims_path_reports_status_and_writes_nothing(world):
+    r = run_cli_path(world, "shims", "path")
+    assert r.returncode == 0, r.stderr
+    assert "~/.zprofile" in r.stdout and "not added" in r.stdout
+    assert not (world.home / ".zprofile").exists()
+
+
+def test_shims_path_undo_removes_the_block(world):
+    world.plugin("waypoints", "0.12.0", ["waypoints"])
+    (world.home / ".zprofile").write_text("orig\n")
+    run_cli_path(world, "shims", "apply")
+    r = run_cli_path(world, "shims", "path", "--undo")
+    assert r.returncode == 0 and "removed" in r.stdout
+    assert (world.home / ".zprofile").read_text() == "orig\n"
+
+
+def test_shims_path_unknown_flag_exits_2(world):
+    r = run_cli_path(world, "shims", "path", "--bogus")
+    assert r.returncode == 2 and "unrecognized" in r.stderr
+
+
+def test_help_documents_path_and_bootstrap_env(world):
+    r = run_cli(world, "--help")
+    for needle in ("shims path", "--undo", "GET_HAIGGOH_NO_PATH_EDIT", "GET_HAIGGOH_TOOLS_DIR",
+                   "GET_HAIGGOH_NO_UV_DOWNLOAD"):
+        assert needle in r.stdout, needle
