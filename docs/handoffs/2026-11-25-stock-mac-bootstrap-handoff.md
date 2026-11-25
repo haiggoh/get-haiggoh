@@ -128,3 +128,13 @@ colleagues get it via `get-haiggoh` / `/get-haiggoh` (update) — no manual venv
   present. Full gate at c7cfb67 green on both halves: `pytest -q -n auto tests` → 360 passed,
   4 skipped; TUI pilots under the venv → 210 passed; `build-portable.py --check` → clean.
   Next: C (rtc-ship v0.12.0), D (dogfood the installed copy).
+- 2026-11-25 free session (Le Chonk): first rtc-ship attempt failed at its rebase step —
+  origin/main had moved (0.11.2 docs bump: d47ae28, ea99e23, 8b34b99), so replaying our 0.12.0
+  bump conflicted in plugin.json x2, CHANGELOG.md, PORTABLE-BUILD.json. Resolved per rtc-ship's
+  own instruction ("resolve it in the worktree, then re-run"): version surfaces take 0.12.0,
+  CHANGELOG keeps BOTH sections (0.12.0 above 0.11.2), PORTABLE-BUILD.json regenerated after the
+  rebase (stamp commit b444a5a). Rebase clean (10 commits), gate re-run green post-rebase:
+  360 passed/4 skipped main, 210 TUI pilots, portable --check clean. A second out-of-family
+  review of origin/main..HEAD was dispatched (Laguna S should win the ladder now that the RAM
+  preflight passes: 16.8 GB free) before re-running rtc-ship. Preflight: v0.12.0 tag absent on
+  origin, gh authed as haiggoh.
