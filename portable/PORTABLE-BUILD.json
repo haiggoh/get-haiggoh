@@ -73,24 +73,50 @@
         "code": true,
         "cowork": false
       }
+    },
+    {
+      "adaptation_class": "native-unchanged",
+      "evidence_level": "source-inspected",
+      "kind": "library",
+      "notes": "login-shell PATH block (shims path); imported by scripts/get-haiggoh.py and hooks/check-installed.py \u2014 must ship or those imports crash (2026-11-25 miss)",
+      "path": "get_haiggoh_pathrc.py",
+      "surfaces": {
+        "chat": false,
+        "code": true,
+        "cowork": false
+      }
+    },
+    {
+      "adaptation_class": "native-unchanged",
+      "evidence_level": "source-inspected",
+      "kind": "library",
+      "notes": "shim create/inspect helpers; imported by the same two \u2014 same 2026-11-25 miss",
+      "path": "get_haiggoh_shims.py",
+      "surfaces": {
+        "chat": false,
+        "code": true,
+        "cowork": false
+      }
     }
   ],
   "files": {
     ".claude-plugin/plugin.json": "a7c2d8989df5ead687e9b50e9cfa24a47492de3ccd77d78a12f581e9dc1538b2",
     "get_haiggoh_core.py": "909cc393ade35008e2d943f25530c36ea41e70004cca2d097d3319facca5c2c5",
     "get_haiggoh_hook_health.py": "5df284d97e262dc38fcd555f448f2ca49ee4abb44b3d13677c6f51e21d13d3bb",
+    "get_haiggoh_pathrc.py": "a61eb48347dfa1f5bf5d906dcc84e8e534ad461a32fab941a5f839e0b9c8bff5",
+    "get_haiggoh_shims.py": "d31b46b669b2fee60a0e234d868b6208aff142e963dde50c13d5d97e6adfd34d",
     "hooks/check-installed.py": "3d6b61955ab4fb25fccca477d2a3b117a90f6c73c95ca2500673285cb5e82d00",
     "hooks/hooks.json": "d045bbf19f6bc345c156d373c9e182ac80228017d84eaf1ec8991000044039c0",
     "scripts/catalog-parity.py": "d7a4cbd43b62141ced1fea349cddb5ea26d8fd26931368db8476c102659eaacd",
     "scripts/get-haiggoh": "bf3b4bab01c0fc83c3e5d54f0947d1dc42847d5d3812eecf24d74b0dd1ad50d5",
     "scripts/get-haiggoh-menu": "133a44e7add6944981ba7c4ee02437c4936f3705a9826d926a035a66d6984edb",
     "scripts/get-haiggoh-open-window": "11d9b91fd4b7fd95a9e0e3e10124dff10c7d30612cbe4bf22839f4d2e7f4643a",
-    "scripts/get-haiggoh-tui": "fa95068d00031cda95bbb855e7765ecb1ee81d0fd0c9d8d33f1020fd8119829a",
+    "scripts/get-haiggoh-tui": "f4efa68efe550ca1b9f5d8b92f71b2686ba417f715237b85cfdd1a15842a01d3",
     "scripts/get-haiggoh.py": "84d5fe80087a0a3b8443352eff7681d3145e619b2ca7474920661a8581d42fae",
     "skills/get-haiggoh/SKILL.md": "0216b21aa93632f3b6d718f4a7a37b16ec2a362d4172efd2f86d97cbf1abcc51"
   },
   "schema": "haiggoh-portable-build/1",
-  "source_commit": "097f27d63f86de1d6b39b43a702f1a1523eca8ef",
+  "source_commit": "1ac1eda5bbcec6659dff86694834c68accf19099",
   "source_repo": "haiggoh/get-haiggoh",
   "transform_version": "1"
 }

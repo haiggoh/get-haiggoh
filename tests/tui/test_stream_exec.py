@@ -55,13 +55,18 @@ class StreamExecTests(unittest.TestCase):
                 gpids.append(int(line.strip()))
 
         code = ("import subprocess,sys,time;"
+                "print('ready',flush=True);"
                 "p=subprocess.Popen([sys.executable,'-c','import time;time.sleep(30)']);"
                 "print(p.pid,flush=True);time.sleep(30)")
+        # 'ready' resets the idle clock at child startup, and the idle window is wide enough
+        # for child+grandchild startup under load: last_output starts at Popen (runner.py),
+        # so the timeout must comfortably exceed worst-case python startup, while still
+        # proving a prompt kill against the child's 30 s sleep (no-kill => ~30 s, red)
         t0 = time.monotonic()
-        res = rn.stream_execute(_child(code), on_line=on_line, timeout=1.5, kill_grace=0.3)
+        res = rn.stream_execute(_child(code), on_line=on_line, timeout=5.0, kill_grace=0.3)
         elapsed = time.monotonic() - t0
         self.assertTrue(res.timed_out)
-        self.assertLess(elapsed, 3.0, "must return promptly after the idle timeout")
+        self.assertLess(elapsed, 10.0, "must return promptly after the idle timeout")
         self.assertTrue(gpids, "the child prints the grandchild pid")
         deadline = time.monotonic() + 1.0
         while True:

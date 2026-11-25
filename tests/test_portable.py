@@ -174,6 +174,43 @@ def test_all_skill_md_strict_parse_host_and_portable():
         assert isinstance(d, dict) and d.get("name") and d.get("description"), f
 
 
+def test_every_root_library_module_is_copied_into_portable():
+    """Choke point for the 2026-11-25 miss: get_haiggoh_pathrc.py / get_haiggoh_shims.py were
+    imported by the portable scripts but missing from COPY_FILES, so the portable package
+    shipped without them and `shims`/the hook's PATH fix crashed with ImportError. Derived
+    from the root glob — never a second hand-maintained list."""
+    import glob as _glob
+    import importlib.machinery
+    import importlib.util
+    loader = importlib.machinery.SourceFileLoader("bp", str(BUILD))
+    spec = importlib.util.spec_from_file_location("bp", BUILD, loader=loader)
+    assert spec is not None and spec.loader is not None
+    bp = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(bp)
+    root_libs = {os.path.basename(p) for p in _glob.glob(str(ROOT / "get_haiggoh_*.py"))}
+    assert root_libs, "no root library modules found — the glob itself is broken"
+    copied = set(bp.COPY_FILES)
+    missing = root_libs - copied
+    assert not missing, f"root library modules missing from COPY_FILES: {sorted(missing)}"
+    for lib in root_libs:
+        assert (PORTABLE / lib).is_file(), f"{lib} not present in portable/"
+        assert (PORTABLE / lib).read_bytes() == (ROOT / lib).read_bytes(), lib
+
+
+def test_portable_python_imports_resolve_inside_portable():
+    """Every `import get_haiggoh_*` in portable code that names a root library MODULE at the
+    host must resolve to the copied module inside portable/. (Package imports such as
+    get_haiggoh_tui are host-only by design — the TUI runs on the host, see COMPONENTS.)"""
+    imp = re.compile(r"^\s*(?:import|from)\s+(get_haiggoh_[A-Za-z0-9_]+)", re.M)
+    for p in sorted(PORTABLE.rglob("*.py")):
+        text = p.read_text(encoding="utf-8", errors="replace")
+        for m in imp.finditer(text):
+            mod = m.group(1)
+            if (ROOT / (mod + ".py")).is_file():  # a root library module: must ship with us
+                assert (PORTABLE / (mod + ".py")).is_file(), \
+                    f"{p.relative_to(PORTABLE)} imports {mod}, missing in portable/"
+
+
 def test_portable_manager_runs_from_portable_root():
     """Functional proof: the portable manager CLI prints its help from the portable root,
     importing the core from the portable root."""

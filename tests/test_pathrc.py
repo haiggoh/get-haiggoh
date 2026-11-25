@@ -76,6 +76,36 @@ def test_remove_block_restores_original_bytes(home):
     assert p.remove_block(str(rc)) is False
 
 
+def test_has_block_requires_begin_and_end(home):
+    rc = home / ".zprofile"
+    rc.write_text("x\n" + p.BEGIN + "\ncase ...")  # truncated: BEGIN without END
+    assert p.has_block(str(rc)) is False
+    rc.write_text("x\n" + p.render_block(shim_dir(home), str(home)))
+    assert p.has_block(str(rc)) is True
+
+
+def test_truncated_append_is_repaired_on_next_run(home):
+    """A previous append cut short (BEGIN, no END) left an unclosed `case` in the rc and made
+    has_block() lie — the next run must remove the wreckage and add one whole, parseable
+    block (review 2026-11-25, finding 4)."""
+    rc = home / ".zprofile"
+    rc.write_text("orig\n" + p.BEGIN + '\ncase ":$PATH:" in\n')  # killed mid-write
+    note = p.ensure_on_path(shim_dir(home))
+    text = rc.read_text()
+    assert text.startswith("orig\n"), text
+    assert text.count(p.BEGIN) == 1 and p.END in text, text
+    assert "added" in note, note
+    r = subprocess.run(["/bin/zsh", "-n", str(rc)], capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr  # the rc must still parse as zsh
+
+
+def test_remove_block_cleans_a_truncated_block(home):
+    rc = home / ".zprofile"
+    rc.write_text("orig\n" + p.BEGIN + '\ncase ":$PATH:" in\n')
+    assert p.remove_block(str(rc)) is True
+    assert rc.read_text() == "orig\n"
+
+
 def test_backup_taken_before_editing(home, tmp_path):
     (home / ".zprofile").write_text("orig\n")
     p.ensure_on_path(shim_dir(home))

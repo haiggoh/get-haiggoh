@@ -61,6 +61,8 @@ COPY_FILES = [
     "hooks/check-installed.py",
     "get_haiggoh_core.py",
     "get_haiggoh_hook_health.py",
+    "get_haiggoh_pathrc.py",
+    "get_haiggoh_shims.py",
     "scripts/catalog-parity.py",
     "scripts/get-haiggoh",
     "scripts/get-haiggoh-menu",
@@ -113,6 +115,15 @@ COMPONENTS = [
      "adaptation_class": "native-unchanged", "evidence_level": "source-inspected",
      "surfaces": {"chat": False, "cowork": False, "code": True},
      "notes": "core at the portable root; the scripts resolve it as dirname(dirname(__file__))"},
+    {"path": "get_haiggoh_pathrc.py", "kind": "library",
+     "adaptation_class": "native-unchanged", "evidence_level": "source-inspected",
+     "surfaces": {"chat": False, "cowork": False, "code": True},
+     "notes": "login-shell PATH block (shims path); imported by scripts/get-haiggoh.py and "
+              "hooks/check-installed.py — must ship or those imports crash (2026-11-25 miss)"},
+    {"path": "get_haiggoh_shims.py", "kind": "library",
+     "adaptation_class": "native-unchanged", "evidence_level": "source-inspected",
+     "surfaces": {"chat": False, "cowork": False, "code": True},
+     "notes": "shim create/inspect helpers; imported by the same two — same 2026-11-25 miss"},
 ]
 
 

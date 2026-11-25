@@ -27,6 +27,21 @@
   timeout per black-holed IPv6 address in SYN_SENT before IPv4 was tried. The curl fallback
   already fell back to IPv4 on its own; the TLS side of corporate wifi was already covered
   (`truststore` injection plus the system-curl route).
+- **The portable package shipped two broken imports.** `get_haiggoh_pathrc.py` and
+  `get_haiggoh_shims.py` were imported by the portable scripts/hook but missing from
+  `COPY_FILES`, so Chat/Cowork installs crashed with ImportError on `shims` and the hook's
+  PATH fix. Every root library module is now copied, pinned by a regression test that derives
+  the list from the root glob (out-of-family review 2026-11-25, GLM 5.3 Flash).
+- **The TUI bootstrap fallback chain no longer dead-ends on a broken uv.** A `uv` on PATH
+  whose `venv` fails no longer blocks the pinned private-uv route (it exists precisely for
+  machines without a local Python >= 3.10); when a stdlib venv was built, its own working
+  `pip` is used for the install step instead of re-selecting the failed uv; the uv download
+  is time-bounded (`--connect-timeout 10 --max-time 300`) so a stalled connection falls back
+  to the plain menu instead of hanging; the interpreter probe rejects nonzero exits.
+- **A truncated PATH-block append is repaired, not ignored.** If a previous append was cut
+  short (BEGIN without END — an unclosed `case` would break the rc for every login),
+  `ensure_on_path` now backs up and removes the wreckage and appends one whole block;
+  `has_block` requires a complete block and `shims path --undo` cleans a truncated one.
 
 ### Added
 

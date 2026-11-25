@@ -72,7 +72,28 @@ def _read(path):
 
 
 def has_block(path):
-    return BEGIN in _read(path)
+    """True only for a COMPLETE block (BEGIN and END) — a truncated append is not a block."""
+    text = _read(path)
+    return BEGIN in text and END in text
+
+
+def _truncated(path):
+    """BEGIN present but END missing: a previous append was cut short mid-block."""
+    text = _read(os.path.realpath(path))
+    return BEGIN in text and END not in text
+
+
+def _drop_truncated(path):
+    """Remove a truncated block (from BEGIN to EOF — the block is always appended last).
+    True if it removed something."""
+    real = os.path.realpath(path)
+    text = _read(real)
+    start = text.find(BEGIN)
+    if start < 0 or END in text:
+        return False
+    with open(real, "w", encoding="utf-8") as f:
+        f.write(text[:start])
+    return True
 
 
 def remove_block(path):
@@ -84,7 +105,10 @@ def remove_block(path):
         return False
     end = text.find(END, start)
     if end < 0:
-        return False
+        # truncated block: remove from BEGIN to EOF so --undo still works
+        with open(real, "w", encoding="utf-8") as f:
+            f.write(text[:start])
+        return True
     end += len(END)
     if text[end:end + 1] == "\n":
         end += 1
@@ -137,6 +161,13 @@ def ensure_on_path(directory):
         if rc is None:
             return (f"{_TAG} warning: {directory} is not on your PATH and get-haiggoh does not "
                     f"edit {_shell_name(shell) or 'this shell'}'s startup files — add: {manual}")
+        if _truncated(rc):
+            # a previous append was cut short (BEGIN without END, e.g. killed mid-write):
+            # back up and remove the wreckage — an unclosed `case` breaks the rc for every
+            # login — then fall through and append one whole block (review 2026-11-25)
+            if os.path.lexists(rc):
+                _backup(rc)
+            _drop_truncated(rc)
         if has_block(rc):
             return ""  # already added; a new terminal picks it up
         lp = login_path(shell)

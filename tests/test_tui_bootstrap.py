@@ -111,13 +111,18 @@ class BootstrapTests(unittest.TestCase):
                 f = fakebin / name
                 f.write_text("#!/bin/sh\nexit 1\n")
                 f.chmod(0o755)
+            # the venv path sits under a regular FILE, so venv creation itself fails —
+            # a failure mode that survives the improved fallback chain (a stdlib venv +
+            # its own pip would otherwise succeed and no longer exercise the fallback)
+            blocker = tmp / "blocker"
+            blocker.write_text("x")
             menu = tmp / "fake-menu"
             menu.write_text("import os\n"
                             "print('PLAIN-REACHED')\n"
                             "print('REASON=' + os.environ.get('GET_HAIGGOH_TUI_FALLBACK_REASON', ''))\n")
             env = base_env(tmp,
                            PATH=str(fakebin) + ":/usr/bin:/bin",
-                           GET_HAIGGOH_TUI_VENV=str(tmp / "venv"),
+                           GET_HAIGGOH_TUI_VENV=str(blocker / "venv"),
                            GET_HAIGGOH_MENU_SCRIPT=str(menu))
             r = run_script(TUI, [], env)
             self.assertIn("TUI unavailable", r.stderr)
@@ -308,6 +313,109 @@ class BootstrapTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 mod.ensure_venv(str(target))
             self.assertEqual((target / "notes.txt").read_text(), "keep me")
+
+    def test_broken_uv_on_path_falls_through_to_the_private_uv(self):
+        # route 3 (the pinned private uv) exists for stock Macs with no local Python >= 3.10;
+        # a uv on PATH whose `venv` fails must not block it (review 2026-11-25, finding 3)
+        mod = load_bootstrap()
+        with tempfile.TemporaryDirectory() as d:
+            tmp = Path(d)
+            venv = tmp / "venv"
+            log = tmp / "uv.log"
+            fakebin = tmp / "fb"
+            fakebin.mkdir()
+            (fakebin / "uv").write_text("#!/bin/sh\nexit 1\n")
+            (fakebin / "uv").chmod(0o755)
+            private = tmp / "private-uv"
+            private.write_text(f'#!/bin/sh\necho "$@" >> "{log}"\n'
+                               f'case "$1" in venv) /bin/mkdir -p "{venv}/bin"; : > "{venv}/bin/python";'
+                               f' printf "version_info = 3.13.1\\n" > "{venv}/pyvenv.cfg";; esac\n')
+            private.chmod(0o755)
+            old = os.environ["PATH"]
+            os.environ["PATH"] = str(fakebin)
+            try:
+                mod.find_base_python = lambda candidates=None: None
+                mod.private_uv = lambda: str(private)
+                mod.ensure_venv(str(venv))
+            finally:
+                os.environ["PATH"] = old
+            calls = log.read_text().splitlines()
+            self.assertTrue(calls[0].startswith("venv --clear --python >=3.10"), calls)
+            self.assertIn("pip install", calls[1])
+            self.assertTrue(mod.venv_ok(venv))
+
+    def test_ensure_venv_prefers_the_venvs_own_pip_over_a_failed_uv(self):
+        # review 2026-11-25, finding 2: when `uv venv` fails but a stdlib venv was built,
+        # the venv has its own working pip — the pip step must not re-select the failed uv
+        mod = load_bootstrap()
+        with tempfile.TemporaryDirectory() as d:
+            tmp = Path(d)
+            venv = tmp / "venv"
+            fakebin = tmp / "fb"
+            fakebin.mkdir()
+            uv = fakebin / "uv"
+            uv.write_text('#!/bin/sh\ncase "$1" in venv) exit 1;; esac\nexit 0\n')
+            uv.chmod(0o755)
+            calls = []
+            real_run = mod._run
+
+            def recording_run(cmd, env=None):
+                calls.append(list(cmd))
+                if cmd[1:2] == ["-m"] and "venv" in cmd:  # stdlib venv route: fake success
+                    (venv / "bin").mkdir(parents=True, exist_ok=True)
+                    (venv / "bin" / "python").write_text("#!/bin/sh\n")
+                    (venv / "bin" / "pip").write_text("#!/bin/sh\n")
+                    (venv / "pyvenv.cfg").write_text("version_info = 3.12.4\n")
+                    return
+                if "pip" in cmd:
+                    return
+                raise RuntimeError(f"uv venv failed: {cmd}")
+
+            mod._run = recording_run
+            old = os.environ["PATH"]
+            os.environ["PATH"] = f"{fakebin}:{old}"
+            try:
+                mod.ensure_venv(str(venv))
+            finally:
+                os.environ["PATH"] = old
+                mod._run = real_run
+            installs = [c for c in calls if "install" in c and "pip" in c]
+            self.assertEqual(len(installs), 1, calls)
+            self.assertEqual(installs[0][1:3], ["-m", "pip"], installs)  # venv's own pip, not uv
+            self.assertTrue(mod.venv_ok(venv))
+
+    def test_fetch_uv_download_has_a_timeout(self):
+        # review 2026-11-25, finding 8: a stalled/black-holed connection must not hang the
+        # bootstrap forever — the fallback-to-plain-menu design depends on failing fast
+        mod = load_bootstrap()
+        with tempfile.TemporaryDirectory() as d:
+            tmp = Path(d)
+            tar, sha = make_uv_tarball(tmp)
+            seen = []
+            real_run = mod._run
+
+            def recording_run(cmd, env=None):
+                seen.append(list(cmd))
+                return real_run(cmd, env=env)
+
+            mod._run = recording_run
+            try:
+                mod.fetch_uv(str(tmp / "tools"), tar.as_uri(), sha)
+            finally:
+                mod._run = real_run
+            curl_cmd = seen[0]
+            self.assertIn("--max-time", curl_cmd, curl_cmd)
+            self.assertIn("--connect-timeout", curl_cmd, curl_cmd)
+
+    def test_py_version_rejects_a_nonzero_exit(self):
+        # review 2026-11-25, finding 9: an interpreter that prints a version but exits
+        # nonzero (a broken shim/wrapper) is not a usable base
+        mod = load_bootstrap()
+        with tempfile.TemporaryDirectory() as d:
+            bad = Path(d) / "bad"
+            bad.write_text('#!/bin/sh\necho "3 12"\nexit 1\n')
+            bad.chmod(0o755)
+            self.assertIsNone(mod.py_version(str(bad)))
 
     def test_check_reports_state_and_changes_nothing(self):
         with tempfile.TemporaryDirectory() as d:

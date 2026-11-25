@@ -125,7 +125,10 @@ def fetch_uv(dest_dir, url, sha256):
     os.close(fd)
     bin_tmp = None
     try:
-        _run([curl, "-fsSL", "--retry", "2", "-o", tar_path, url])
+        # bounded so a stalled/black-holed connection fails fast into the plain-menu
+        # fallback instead of hanging the bootstrap (review 2026-11-25)
+        _run([curl, "-fsSL", "--retry", "2", "--connect-timeout", "10",
+              "--max-time", "300", "-o", tar_path, url])
         with open(tar_path, "rb") as f:
             got = hashlib.sha256(f.read()).hexdigest()
         if got != sha256:
@@ -181,6 +184,8 @@ def py_version(exe):
     try:
         r = subprocess.run([exe, "-c", "import sys; print(*sys.version_info[:2])"],
                            capture_output=True, text=True, timeout=15)
+        if r.returncode != 0:
+            return None  # prints a version but exits nonzero (broken shim/wrapper): unusable
         major, minor = r.stdout.split()[:2]
         return (int(major), int(minor))
     except (OSError, ValueError, subprocess.SubprocessError):
@@ -263,8 +268,9 @@ def create_venv(venv):
             _run([uv, "venv", "--clear", "--python", base or floor, venv], env=uv_env())
             return uv
         except RuntimeError:
-            if not base:
-                raise
+            pass  # a broken uv on PATH must not block route 3, the pinned private uv
+                  # (review 2026-11-25: it exists precisely for machines without a local
+                  # Python >= MIN_PY)
     if base:
         _run([base, "-m", "venv", "--clear", venv])
         return None
@@ -289,9 +295,13 @@ def ensure_venv(venv):
     if not os.path.isfile(venv_python(venv)) or v is None or v < MIN_PY:
         uv = create_venv(venv)
     py = venv_python(venv)
-    uv = uv or shutil.which("uv") or cached_private_uv()
-    if not uv and not os.path.exists(os.path.join(venv, "bin", "pip")):
-        uv = private_uv()  # a uv-built venv has no pip of its own
+    if os.path.isfile(os.path.join(venv, "bin", "pip")):
+        uv = None  # a stdlib-built venv has a working pip of its own — don't re-select a uv
+                   # that just failed `venv` (review 2026-11-25)
+    else:
+        uv = uv or shutil.which("uv") or cached_private_uv()
+        if not uv:
+            uv = private_uv()  # a uv-built venv has no pip of its own
     if uv:
         _run([uv, "pip", "install", "--python", py, "-r", REQS, "-r", DEV_REQS], env=uv_env())
     else:

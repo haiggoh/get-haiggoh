@@ -138,3 +138,23 @@ colleagues get it via `get-haiggoh` / `/get-haiggoh` (update) — no manual venv
   review of origin/main..HEAD was dispatched (Laguna S should win the ladder now that the RAM
   preflight passes: 16.8 GB free) before re-running rtc-ship. Preflight: v0.12.0 tag absent on
   origin, gh authed as haiggoh.
+- 2026-11-25 free session (Le Chonk): second out-of-family review landed on GLM 5.3 Flash
+  (zhipu, remote nvidia; KAT Coder ran the first pass) — 12 findings, each verified against
+  the real code. FIXED TDD: (1) portable shipped without get_haiggoh_pathrc.py /
+  get_haiggoh_shims.py → both added to COPY_FILES + COMPONENTS, regression tests derive the
+  module list from the root glob and check portable imports resolve inside portable/;
+  (2+3) create_venv no longer raises past a broken uv-on-PATH when no base Python exists —
+  it falls through to the pinned private uv — and ensure_venv prefers a stdlib-built venv's
+  own pip over re-selecting the failed uv; (4) a truncated PATH-block append (BEGIN without
+  END) is now backed up, removed and re-added whole by ensure_on_path; has_block requires a
+  complete block; remove_block cleans a truncated one; (8) the uv download is time-bounded
+  (--connect-timeout 10 --max-time 300); (9) py_version rejects nonzero exits. REJECTED with
+  reasons: (5) concurrent-hook duplicate blocks — ms race window, block is self-guarding;
+  (6) current-process PATH short-circuit — deliberate ruling in the plan ledger; (7)
+  _ipv4_first thread-safety — hook/CLI are single-threaded at the fetch call site; (10)
+  pyvenv.cfg suffix parse — split(".")[:2] already tolerates suffixes, non-numeric => safe
+  rebuild; (11) /bin/zsh test dependency — macOS-targeted repo; (12) unverifiable symbols —
+  verified: modules exist, gate green. Also fixed the pre-existing flake in
+  test_timeout_kills_process_group (idle clock starts at Popen, so the window now exceeds
+  worst-case child startup; ready-line + 8/8 isolated passes; branch touches no TUI source).
+  Gate after fixes: main 369 passed/4 skipped, TUI 210 passed, portable --check clean.
