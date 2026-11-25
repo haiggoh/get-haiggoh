@@ -14,6 +14,10 @@ def _isolate_shim_dirs(tmp_path_factory, monkeypatch):
     base = tmp_path_factory.mktemp("shim-isolation")
     monkeypatch.setenv("GET_HAIGGOH_SHIM_DIR", str(base / "bin"))
     monkeypatch.setenv("GET_HAIGGOH_SHIM_BACKUP_DIR", str(base / "backups"))
+    # nor the real shell startup files (tests of the PATH block clear this themselves,
+    # with HOME/ZDOTDIR pointed at a tmp dir), nor the real private-uv tools dir
+    monkeypatch.setenv("GET_HAIGGOH_NO_PATH_EDIT", "1")
+    monkeypatch.setenv("GET_HAIGGOH_TOOLS_DIR", str(base / "tools"))
 
 
 class World:
