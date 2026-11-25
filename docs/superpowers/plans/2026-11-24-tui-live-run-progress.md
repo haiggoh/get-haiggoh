@@ -1,6 +1,6 @@
 # get-haiggoh TUI — live, non-blocking bulk-run progress — Implementation Plan
 
-**Status:** draft
+**Status:** completed
 
 > **Lasting Plans:** when every task below is done, set the Status line to `completed` by running `lasting-plans complete "docs/superpowers/plans/2026-11-24-tui-live-run-progress.md"` as the closing step.
 
