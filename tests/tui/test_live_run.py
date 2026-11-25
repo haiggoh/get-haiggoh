@@ -144,7 +144,7 @@ class LiveRunTests(unittest.TestCase):
                     await _wait_started(runner)
                     ol = app.screen.query_one("#rows")
                     s0 = _prompt(ol, "runstatus")
-                    await pilot.pause(0.4)  # let the 150 ms tick fire a few times
+                    await pilot.pause(0.5)  # let the 150 ms tick fire a few times
                     s1 = _prompt(ol, "runstatus")
                     assert s0 != s1, "the heartbeat must change even with zero output"
                     runner.release.set()
@@ -170,6 +170,7 @@ class LiveRunTests(unittest.TestCase):
                         if time.monotonic() - t0 > 3:
                             raise AssertionError("row never flipped to ✓ 9.9")
                         await asyncio.sleep(0.02)
+                    assert app.run_active, "the flip must be observed WHILE the run is still open"
                     runner.after_result.set()
                     await _wait_done(app)
                     await pilot.press("escape")

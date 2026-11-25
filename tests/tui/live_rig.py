@@ -82,7 +82,7 @@ class GatedRunner:
                 if control is not None and control.stop == "immediate":
                     break
                 if time.monotonic() - t0 > _WAIT_WATCHDOG:
-                    break
+                    raise AssertionError("gated runner watchdog expired (release never set)")
                 self.release.wait(0.02)
             prev_name = s.name
             if self.raise_exc is not None:
@@ -99,6 +99,6 @@ class GatedRunner:
                     if control is not None and control.stop == "immediate":
                         break
                     if time.monotonic() - t1 > _WAIT_WATCHDOG:
-                        break
+                        raise AssertionError("gated runner watchdog expired (after_result never set)")
                     self.after_result.wait(0.02)
         return results

@@ -385,9 +385,11 @@ class GetHaiggohApp(App):
         if name not in ids:
             return
         idx = ids.index(name)
-        # ol._lines is private in Textual 3.7.1 — pinned by test_running_row_scrolled_into_view.
-        # _lines is indexed by scroll_offset.y + screen_y, so the option's first content
-        # line is its POSITION in _lines (not the per-option offset).
+        # ol._lines is private in Textual 3.7.1 — pinned by test_running_row_scrolled_into_view,
+        # so a Textual bump that changes it goes RED instead of silent. _lines is indexed by
+        # scroll_offset.y + screen_y, so the option's first content line is its POSITION in
+        # _lines (not the per-option offset). If Textual ever ships a public
+        # get_option_screen_position-style API, switch to it here.
         y = next((pos for pos, (i, _off) in enumerate(ol._lines) if i == idx), None)
         if y is None:
             return
