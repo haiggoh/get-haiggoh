@@ -21,6 +21,12 @@
   the menu banner as `⚠️ TUI unavailable: …` plus `details: get-haiggoh-tui --check`, instead
   of only the single stderr line, which the banner scrolls away (colleague feedback
   2026-11-25).
+- **The manifest check no longer stalls on networks that black-hole IPv6** (corporate wifi).
+  The urllib attempt in `fetch_url` now orders `getaddrinfo` IPv4-first, interleaved with
+  IPv6 — folded in from free-agents' `remote_http.py`, where stock DNS order cost the full
+  timeout per black-holed IPv6 address in SYN_SENT before IPv4 was tried. The curl fallback
+  already fell back to IPv4 on its own; the TLS side of corporate wifi was already covered
+  (`truststore` injection plus the system-curl route).
 
 ### Added
 

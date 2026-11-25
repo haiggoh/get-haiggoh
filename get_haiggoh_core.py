@@ -5,10 +5,13 @@ are the only places that shell out to `claude`/`git`, so this module stays trivi
 mockable in tests. Every loader is fail-safe (returns an empty structure on error) —
 a corrupt/missing file must never crash a SessionStart hook.
 """
+import contextlib
+import itertools
 import json
 import os
 import re
 import shutil
+import socket
 import subprocess
 import tempfile
 import urllib.request
@@ -414,13 +417,37 @@ def _is_tls_error(text):
     return "CERTIFICATE_VERIFY_FAILED" in text or "SSL" in text or "certificate" in text.lower()
 
 
+@contextlib.contextmanager
+def _ipv4_first():
+    """While active, getaddrinfo returns IPv4 first, the families interleaved (v4, v6, v4,
+    v6, ...) — folded in from free-agents bin/remote_http.py (measured 2026-11-03: a network
+    that black-holes IPv6 lists it first in DNS, and stock socket.create_connection spends the
+    FULL timeout per IPv6 address in SYN_SENT before IPv4 is tried). IPv4 first connects
+    immediately on the working family; interleaving still reaches IPv6 early on an IPv6-only
+    network. The original is always restored, even on exception."""
+    orig = socket.getaddrinfo
+
+    def ordered(host, port, family=0, type=0, proto=0, flags=0):
+        infos = orig(host, port, family, type, proto, flags)
+        v4 = [i for i in infos if i[0] == socket.AF_INET]
+        other = [i for i in infos if i[0] != socket.AF_INET]
+        return [i for pair in itertools.zip_longest(v4, other) for i in pair if i is not None]
+
+    socket.getaddrinfo = ordered
+    try:
+        yield
+    finally:
+        socket.getaddrinfo = orig
+
+
 def fetch_url(url, timeout):
-    """The body at `url` as bytes. urllib first; on ANY urllib failure, system curl (OS trust
+    """The body at `url` as bytes. urllib first — truststore-injected, with IPv4-first address
+    order so an IPv6 blackhole cannot stall it; on ANY urllib failure, system curl (OS trust
     store, and it falls back to IPv4 where IPv6 is black-holed). Raises FetchError naming both
     attempts when neither works -- never returns None."""
     _inject_truststore()
     try:
-        with urllib.request.urlopen(url, timeout=timeout) as response:
+        with _ipv4_first(), urllib.request.urlopen(url, timeout=timeout) as response:
             return response.read()
     except Exception as exc:
         first = f"urllib: {exc}"

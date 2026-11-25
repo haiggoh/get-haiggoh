@@ -77,7 +77,7 @@
   ],
   "files": {
     ".claude-plugin/plugin.json": "a7c2d8989df5ead687e9b50e9cfa24a47492de3ccd77d78a12f581e9dc1538b2",
-    "get_haiggoh_core.py": "414a3aa36626f5b0384f8027d2416e2833ef81178a098ddfe2af06992ac819e0",
+    "get_haiggoh_core.py": "909cc393ade35008e2d943f25530c36ea41e70004cca2d097d3319facca5c2c5",
     "get_haiggoh_hook_health.py": "5df284d97e262dc38fcd555f448f2ca49ee4abb44b3d13677c6f51e21d13d3bb",
     "hooks/check-installed.py": "3d6b61955ab4fb25fccca477d2a3b117a90f6c73c95ca2500673285cb5e82d00",
     "hooks/hooks.json": "d045bbf19f6bc345c156d373c9e182ac80228017d84eaf1ec8991000044039c0",
@@ -90,7 +90,7 @@
     "skills/get-haiggoh/SKILL.md": "0216b21aa93632f3b6d718f4a7a37b16ec2a362d4172efd2f86d97cbf1abcc51"
   },
   "schema": "haiggoh-portable-build/1",
-  "source_commit": "0450d3fbc205c51df94a323a3e3712117e9a67e7",
+  "source_commit": "9661c36a3933a2f7e73b3321712e1f843b67c02f",
   "source_repo": "haiggoh/get-haiggoh",
   "transform_version": "1"
 }

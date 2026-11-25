@@ -6,10 +6,12 @@ CERTIFICATE_VERIFY_FAILED for every manifest while curl (macOS keychain) fetched
 fine. plan printed the warning AND '= cost-tracker 0.20.1 (current)' and exited 0; apply printed
 only '(current)'; the SessionStart hook cached the failed sweep for the whole day."""
 import os
+import socket
 import ssl
 import stat
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 
 import pytest
@@ -112,6 +114,84 @@ def test_tls_diagnostic_names_interception_not_just_connectivity():
     d = c.fetch_diagnostic(URL, c.FetchError("x", kind="tls"))
     assert "TLS" in d["problem"] or "TLS" in d["meaning"]
     assert "curl" in d["fix"]
+
+
+# --- IPv6 blackhole: the urllib attempt must try IPv4 first ------------------------------
+# free-agents remote_http.py fix (measured 2026-11-03: a network that black-holes IPv6 lists
+# it first in DNS, and stock create_connection spent the FULL timeout per IPv6 address in
+# SYN_SENT — 8 x timeout — before IPv4 was tried). Folded into core.fetch_url.
+
+V6_FIRST = [
+    (socket.AF_INET6, socket.SOCK_STREAM, 6, "", ("2001:db8::1", 443, 0, 0)),
+    (socket.AF_INET6, socket.SOCK_STREAM, 6, "", ("2001:db8::2", 443, 0, 0)),
+    (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443)),
+    (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.35", 443)),
+]
+
+
+def _canned_v6_first_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
+    return list(V6_FIRST)
+
+
+def test_ipv4_first_reorders_getaddrinfo_v4_first_interleaved(monkeypatch):
+    monkeypatch.setattr(socket, "getaddrinfo", _canned_v6_first_getaddrinfo)
+    with c._ipv4_first():
+        infos = socket.getaddrinfo("example.com", 443, type=socket.SOCK_STREAM)
+    assert [i[0] for i in infos] == [socket.AF_INET, socket.AF_INET6,
+                                     socket.AF_INET, socket.AF_INET6]
+
+
+def test_ipv4_first_restores_getaddrinfo_on_exit_and_on_exception():
+    real = socket.getaddrinfo
+    with c._ipv4_first():
+        assert socket.getaddrinfo is not real
+    assert socket.getaddrinfo is real
+    try:
+        with c._ipv4_first():
+            raise RuntimeError("boom")
+    except RuntimeError:
+        pass
+    assert socket.getaddrinfo is real
+
+
+def test_fetch_url_tries_ipv4_first_when_ipv6_is_blackholed(monkeypatch, tmp_path, no_truststore):
+    """Behavioral discriminant: DNS lists IPv6 first (black-holed); the urllib attempt must
+    see IPv4 first, or the connect stalls in SYN_SENT for the whole timeout."""
+    monkeypatch.setattr(socket, "getaddrinfo", _canned_v6_first_getaddrinfo)
+    curl, log = _fake_curl(tmp_path, rc=6, stderr="curl: (6) Could not resolve host")
+    monkeypatch.setenv("GET_HAIGGOH_CURL", str(curl))
+
+    class _Resp:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def read(self):
+            return MANIFEST
+
+    def urlopen_observing_order(url, timeout=None):
+        host = urllib.parse.urlparse(url).hostname
+        infos = socket.getaddrinfo(host, 443, type=socket.SOCK_STREAM)
+        if infos[0][0] != socket.AF_INET:
+            raise OSError("SYN_SENT to a black-holed IPv6 address — full timeout spent")
+        return _Resp()
+
+    monkeypatch.setattr(urllib.request, "urlopen", urlopen_observing_order)
+    assert c.fetch_url(URL, timeout=3) == MANIFEST
+    assert not log.exists()  # the curl fallback was never needed
+
+
+def test_fetch_url_leaves_getaddrinfo_untouched_after_a_failed_fetch(
+        monkeypatch, tmp_path, no_truststore):
+    real = socket.getaddrinfo
+    curl, _ = _fake_curl(tmp_path, rc=6, stderr="curl: (6) Could not resolve host")
+    monkeypatch.setenv("GET_HAIGGOH_CURL", str(curl))
+    monkeypatch.setattr(urllib.request, "urlopen", _tls_failure)
+    with pytest.raises(c.FetchError):
+        c.fetch_url(URL, timeout=3)
+    assert socket.getaddrinfo is real
 
 
 # --- the CLI: unverifiable is a status of its own, and it is not success ------------------

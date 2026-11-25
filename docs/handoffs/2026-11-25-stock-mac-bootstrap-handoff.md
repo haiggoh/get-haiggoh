@@ -109,3 +109,13 @@ colleagues get it via `get-haiggoh` / `/get-haiggoh` (update) — no manual venv
   CHANGELOG 0.12.0 bullet added; `build-portable.py` regen committed, `--check` clean.
   Next: B (whole-branch review dispatch + full gate), C (rtc-ship v0.12.0), D (dogfood the
   installed copy).
+- 2026-11-25 free session (Le Chonk), user follow-up "corporate wifi out of the box":
+  truststore was ALREADY folded in (core `_inject_truststore` + curl fallback +
+  `UV_SYSTEM_CERTS`/`UV_NATIVE_TLS` + `truststore` pin in the TUI venv + system curl for the
+  uv download) — no change. The IPv6-blackhole fix was NOT: `fetch_url`'s urllib attempt used
+  stock DNS order. Folded in free-agents' `remote_http.py` fix as `_ipv4_first()`
+  (IPv4-first interleaved getaddrinfo, restored even on exception) around the urllib call;
+  4 new tests in test_fetch_and_unverified.py watched RED (behavioral one failed with
+  "SYN_SENT to a black-holed IPv6 address — full timeout spent"), then 16/16 green;
+  get_haiggoh_core.py parses on 3.9.6; portable regen committed, `--check` clean; CHANGELOG
+  0.12.0 bullet added.
