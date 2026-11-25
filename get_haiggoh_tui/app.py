@@ -453,6 +453,7 @@ class GetHaiggohApp(App):
         all_results = carried + list(results)
         relaunch = self._relaunch_rest
         self._relaunch_rest = None
+        inline_rest = None
         if relaunch is not None:
             op, rest = relaunch
             if not error and results and all(r.ok for r in results):
@@ -462,19 +463,25 @@ class GetHaiggohApp(App):
                 self.refresh_summary()
                 relaunch_with_pending(op, rest, self.pending_path, self.execv)
                 return
-            # the new code never landed: keep the self ✗ and run the rest inline here
-            self._carried_results = all_results
+            # the new code never landed — but a cancelled self-update must NOT run the rest
+            user_cancelled = (state is not None and state.stop is not None) or any(
+                getattr(r, "outcome", "") in ("cancelled", "skipped") for r in results)
+            if not user_cancelled:
+                inline_rest = (op, rest)
+                self._carried_results = all_results
+        if inline_rest is not None:
             self._redraw_main()
             self.refresh_buttons()
             self.refresh_summary()
-            self._start_run(op, rest)
+            self._start_run(*inline_rest)
             return
         self._carried_results = None
         cancel_types = tuple(t for t in (getattr(scr, "CancelConfirmScreen", None),
                                          getattr(scr, "CancelModeScreen", None))
                              if t is not None)
-        if cancel_types and isinstance(self.screen, cancel_types):
-            self.pop_screen()
+        if cancel_types:
+            while isinstance(self.screen, cancel_types):
+                self.pop_screen()  # dismiss ANY cancel dialog still open
         self._redraw_main()
         self.refresh_buttons()
         self.refresh_summary()

@@ -212,6 +212,32 @@ class CancelTests(unittest.TestCase):
 
             asyncio.run(asyncio.wait_for(go(), 10))
 
+    def test_cancel_during_self_update_does_not_run_the_rest(self):
+        with tempfile.TemporaryDirectory() as d:
+            rows = [row("get-haiggoh", "outdated", installed="0.9.4", latest="0.10.0",
+                        mark="👨🏻‍💻"),
+                    row("waypoints", "outdated", installed="0.14.3", latest="0.15.0")]
+            runner = GatedRunner()
+            execs = []
+            app = make_app(d, rows=rows, runner=runner,
+                           execv=lambda p, a: execs.append((p, list(a))))
+
+            async def go():
+                async with app.run_test() as pilot:
+                    await self._start(app, pilot)
+                    await _wait_started(runner)
+                    await pilot.press("escape", "escape")  # immediate cancel during the self step
+                    await pilot.pause()
+                    runner.release.set()
+                    await _wait_done(app, timeout=8)
+                    body = _report_body(app)
+                    assert "cancelled" in body, body
+
+            asyncio.run(asyncio.wait_for(go(), 10))
+            assert runner.calls == [["get-haiggoh"]], \
+                f"a cancelled self-update must not run the rest: {runner.calls}"
+            assert execs == [], "no relaunch after a cancelled self-update"
+
     def test_ctrl_q_blocked_during_run(self):
         with tempfile.TemporaryDirectory() as d:
             runner = GatedRunner()

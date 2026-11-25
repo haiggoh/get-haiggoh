@@ -638,7 +638,7 @@ class RunReportScreen(ModalScreen):
         m = len(self.results) - k  # failed = every non-ok, skipped included
         yield Static(f"{EMOJI[self.op]} {self.op.capitalize()} report — {k} ok · {m} failed",
                      id="report-title")
-        yield Static(self._body(), id="report-text")
+        yield Static(Text(self._body()), id="report-text")  # Text, never a markup string (0.10.2 bug)
         with Horizontal(id="buttons"):
             yield Button("Done", id="btn-done")
 

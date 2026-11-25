@@ -23,6 +23,7 @@ textual = pytest.importorskip("textual")  # venv run: 0 skipped is the receipt
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
+from rich.text import Text  # noqa: E402
 from textual.widgets import Static  # noqa: E402
 
 from get_haiggoh_tui import runner as rn  # noqa: E402
@@ -203,6 +204,28 @@ class LiveRunTests(unittest.TestCase):
                     assert "✓ waypoints (plugin)" in body, body
                     assert "brew: command not found" in body, body
                     assert "more" not in body, "only the first error line is shown"
+
+            asyncio.run(asyncio.wait_for(go(), 10))
+
+    def test_report_escapes_bracket_markup(self):
+        # the 0.10.2 bug class: "[x]" as a markup string is eaten — the report body
+        # must be a Text, never a raw markup-parsed string
+        with tempfile.TemporaryDirectory() as d:
+            runner = GatedRunner(outcome="failed", result_output="error: unknown option [--foo]")
+            app = make_app(d, runner=runner)
+
+            async def go():
+                async with app.run_test() as pilot:
+                    await self._start_update(app, pilot)
+                    await _wait_started(runner)
+                    runner.release.set()
+                    await _wait_done(app)
+                    rep = app.screen
+                    assert isinstance(rep, scr.RunReportScreen)
+                    static = rep.query_one("#report-text", Static)
+                    assert isinstance(static.renderable, Text), \
+                        f"report body must be a Text, got {type(static.renderable).__name__}"
+                    assert "[--foo]" in static.renderable.plain, static.renderable.plain
 
             asyncio.run(asyncio.wait_for(go(), 10))
 

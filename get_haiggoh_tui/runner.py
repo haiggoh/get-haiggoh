@@ -77,6 +77,9 @@ class RunControl:
     def attach(self, proc) -> None:
         with self._lock:
             self._proc = proc
+            stop = self._stop
+        if stop == "immediate":
+            self.kill_current()  # a stop that landed before attach still kills
 
     def detach(self) -> None:
         with self._lock:

@@ -10,6 +10,7 @@ seam); no case waits longer than 3 s.
 Usage: pytest tests/tui/test_stream_exec.py -q --durations=5
 """
 import os
+import subprocess
 import sys
 import tempfile
 import threading
@@ -175,6 +176,23 @@ class StreamExecTests(unittest.TestCase):
         res = rn.stream_execute(["/nonexistent/brew", "x"], on_line=lambda line: None)
         self.assertIsNone(res.returncode)
         self.assertIn("not found", res.output)
+
+    def test_attach_rechecks_immediate_stop(self):
+        # an "immediate" stop that landed BEFORE attach must still kill the process
+        # (the window spans Popen..attach, incl. a release-installer download)
+        control = rn.RunControl()
+        proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"],
+                                stdout=subprocess.DEVNULL, start_new_session=True)
+        control.request_stop("immediate")  # before attach: _proc is still None
+        control.attach(proc)
+        try:
+            proc.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            control.detach()
+            proc.kill()
+            self.fail("attach did not kill after a pre-attach immediate stop")
+        self.assertLess(proc.returncode, 0, "killed by signal")
+        control.detach()
 
 
 if __name__ == "__main__":
