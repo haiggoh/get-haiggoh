@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.12.0] — 2026-11-25
+
+### Fixed — get-haiggoh works on a stock Mac (no Homebrew, no admin rights)
+
+- **The TUI opens instead of falling back to the plain menu.** Its private venv was built
+  from the first `python3` on PATH — macOS's own 3.9 — which cannot install the pinned TUI
+  dependencies (they need Python >= 3.10), and the broken venv was reused on every later
+  run. It is now built on the first Python >= 3.10 found (python3.N on PATH, Homebrew's
+  when present); without one, get-haiggoh downloads a pinned, checksum-verified `uv` into
+  `~/.local/share/get-haiggoh/tools` with the system `curl`, and `uv` fetches a standalone
+  Python into your home directory. Nothing needs Homebrew or administrator rights. A venv
+  left behind on 3.9 is rebuilt automatically.
+- **`get-haiggoh` is on PATH in new terminals.** The shortcuts live in `~/.local/bin`, which
+  stock macOS does not put on PATH. The SessionStart hook and `apply` now add one labelled
+  block to your login shell's startup file (`~/.zprofile`, or the first existing bash
+  profile) when that directory is missing, after backing the file up, and say so.
+
+### Added
+
+- `get-haiggoh shims path` shows whether the shortcut dir is on PATH; `--undo` removes the
+  block. Opt-outs: `GET_HAIGGOH_NO_PATH_EDIT=1` (never edit startup files),
+  `GET_HAIGGOH_NO_UV_DOWNLOAD=1` (never download uv); `GET_HAIGGOH_TOOLS_DIR` moves the
+  private uv.
+
 ## [0.11.1] — 2026-11-25
 
 ### Fixed

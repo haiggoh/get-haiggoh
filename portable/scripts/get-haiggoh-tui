@@ -14,16 +14,26 @@ Env:
   GET_HAIGGOH_TUI_STATE_FILE    TUI state file (default ~/.claude/.get-haiggoh-tui-state.json)
   GET_HAIGGOH_TUI_PENDING_FILE  pending-run file (default ~/.claude/.get-haiggoh-tui-pending.json)
   GET_HAIGGOH_MENU_SCRIPT       plain-menu override (used by tests)
+  GET_HAIGGOH_TOOLS_DIR         where the private uv lives
+                               (default ~/.local/share/get-haiggoh/tools)
+  GET_HAIGGOH_NO_UV_DOWNLOAD=1  never download the private uv
 
-The venv is rebuilt when sha256(tui-requirements.txt) differs from <venv>/.req-sha.
+The venv is rebuilt when sha256(tui-requirements.txt) differs from <venv>/.req-sha,
+and recreated when it was built on a Python below 3.10 (the pins need >= 3.10; macOS's
+own python3 is 3.9). It is built on the first Python >= 3.10 found — this interpreter,
+python3.N on PATH, Homebrew's — else on one uv fetches: a uv on PATH, or a pinned,
+checksum-verified uv downloaded into the tools dir. No admin rights, no Homebrew needed.
 Any bootstrap failure prints ONE stderr line and execs the plain menu — setup never
 dead-ends.
 """
 import hashlib
 import os
+import platform
 import shutil
 import subprocess
 import sys
+import tarfile
+import tempfile
 
 HERE = os.path.dirname(os.path.realpath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -54,9 +64,167 @@ def venv_python(venv):
     return os.path.join(venv, "bin", "python")
 
 
+# The pins (markdown-it-py 4, platformdirs 4.12, truststore, ...) need Python >= 3.10.
+# macOS ships /usr/bin/python3 = 3.9, which is the FIRST python3 on a fresh Mac's PATH:
+# a venv built from it can never install them, so every launch fell back to the plain menu.
+MIN_PY = (3, 10)
+NEED_PY = ("the TUI needs Python >= 3.10 and none was found (macOS's own python3 is 3.9); "
+           "get-haiggoh normally fetches a private uv + Python itself (no admin, no Homebrew), "
+           "but that was skipped (GET_HAIGGOH_NO_UV_DOWNLOAD is set) or failed — fix the "
+           "network or install any Python >= 3.10, then run get-haiggoh again")
+
+# The admin-free, Homebrew-free route: a PINNED uv release, checked against a HARDCODED
+# sha256 (verified 2026-11-25 against the release's .sha256 files AND the GitHub API asset
+# digests), unpacked into the user's home. uv then fetches a standalone CPython, also into
+# the home directory. Bump all three together.
+UV_VERSION = "0.13.9"
+UV_SHA256 = {
+    "uv-aarch64-apple-darwin.tar.gz":
+        "5aeca67f2283f75235de40d0bd9c0a5bbc5fce23b6d48b3bf9fa1b2db08382ca",
+    "uv-x86_64-apple-darwin.tar.gz":
+        "617a3211261b0fc739562f0071aa34e9739797c510208ede8e2977c30903d041",
+}
+DEFAULT_TOOLS = os.path.join(os.path.expanduser("~/.local/share"), "get-haiggoh", "tools")
+
+
+def tools_dir():
+    d = os.environ.get("GET_HAIGGOH_TOOLS_DIR")
+    if d and os.path.exists(d) and not os.path.isdir(d):
+        raise RuntimeError(f"GET_HAIGGOH_TOOLS_DIR={d!r} is not a directory")
+    return d or DEFAULT_TOOLS
+
+
+def uv_asset():
+    """The release asset for this machine, or None where no pin exists (non-macOS)."""
+    if sys.platform != "darwin":
+        return None
+    arch = {"arm64": "aarch64", "x86_64": "x86_64"}.get(platform.machine())
+    return f"uv-{arch}-apple-darwin.tar.gz" if arch else None
+
+
+def uv_env():
+    """Corporate networks re-sign TLS with a CA that lives only in the system keychain:
+    make uv trust it (new flag name and the older one; unknown names are ignored)."""
+    env = os.environ.copy()
+    env.update(UV_SYSTEM_CERTS="1", UV_NATIVE_TLS="1")
+    return env
+
+
+def fetch_uv(dest_dir, url, sha256):
+    """Download with the system curl (it trusts the keychain, so it works behind a TLS-
+    inspecting proxy where Python 3.9's urllib does not), verify sha256, extract ONLY the
+    `uv` member by name (never extractall), install atomically as <dest_dir>/uv.
+    Returns the path; RuntimeError on any failure, leaving no `uv` behind."""
+    os.makedirs(dest_dir, exist_ok=True)
+    curl = shutil.which("curl") or "/usr/bin/curl"
+    fd, tar_path = tempfile.mkstemp(dir=dest_dir, suffix=".tar.gz")
+    os.close(fd)
+    bin_tmp = None
+    try:
+        _run([curl, "-fsSL", "--retry", "2", "-o", tar_path, url])
+        with open(tar_path, "rb") as f:
+            got = hashlib.sha256(f.read()).hexdigest()
+        if got != sha256:
+            raise RuntimeError(f"uv download sha256 mismatch for {url} "
+                               f"(expected {sha256[:12]}…, got {got[:12]}…)")
+        with tarfile.open(tar_path, "r:gz") as t:
+            member = next((m for m in t.getmembers()
+                           if m.isfile() and os.path.basename(m.name) == "uv"), None)
+            src = t.extractfile(member) if member is not None else None
+            if src is None:
+                raise RuntimeError(f"no uv binary inside {url}")
+            data = src.read()
+        fd, bin_tmp = tempfile.mkstemp(dir=dest_dir)
+        with os.fdopen(fd, "wb") as f:
+            f.write(data)
+        os.chmod(bin_tmp, 0o755)
+        final = os.path.join(dest_dir, "uv")
+        os.replace(bin_tmp, final)
+        bin_tmp = None
+        return final
+    finally:
+        for p in (tar_path, bin_tmp):
+            if p and os.path.exists(p):
+                os.remove(p)
+
+
+def _private_uv_path():
+    return os.path.join(tools_dir(), f"uv-{UV_VERSION}", "uv")
+
+
+def cached_private_uv():
+    p = _private_uv_path()
+    return p if os.access(p, os.X_OK) else None
+
+
+def private_uv():
+    """The pinned private uv, downloading it on first use; None when downloads are
+    disabled (GET_HAIGGOH_NO_UV_DOWNLOAD) or no pin exists for this machine."""
+    if os.environ.get("GET_HAIGGOH_NO_UV_DOWNLOAD"):
+        return None
+    cached = cached_private_uv()
+    if cached:
+        return cached
+    asset = uv_asset()
+    if not asset:
+        return None
+    url = f"https://github.com/astral-sh/uv/releases/download/{UV_VERSION}/{asset}"
+    return fetch_uv(os.path.dirname(_private_uv_path()), url, UV_SHA256[asset])
+
+
+def py_version(exe):
+    """(major, minor) of an interpreter, or None when it cannot be run."""
+    try:
+        r = subprocess.run([exe, "-c", "import sys; print(*sys.version_info[:2])"],
+                           capture_output=True, text=True, timeout=15)
+        major, minor = r.stdout.split()[:2]
+        return (int(major), int(minor))
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None
+
+
+def base_python_candidates():
+    """Our own interpreter first, then the newest python3.N on PATH, then Homebrew's."""
+    found = [sys.executable]
+    for minor in range(20, MIN_PY[1] - 1, -1):
+        exe = shutil.which(f"python3.{minor}")
+        if exe:
+            found.append(exe)
+    found += ["/opt/homebrew/bin/python3", "/usr/local/bin/python3", shutil.which("python3")]
+    return list(dict.fromkeys(p for p in found if p))
+
+
+def find_base_python(candidates=None):
+    """First candidate at or above MIN_PY, or None."""
+    for exe in (base_python_candidates() if candidates is None else candidates):
+        v = py_version(exe)
+        if v is not None and v >= MIN_PY:
+            return exe
+    return None
+
+
+def venv_py_version(venv):
+    """(major, minor) the venv was built with, read from pyvenv.cfg (no subprocess);
+    None when there is no readable version."""
+    try:
+        with open(os.path.join(venv, "pyvenv.cfg"), encoding="utf-8") as f:
+            for line in f:
+                key, _, value = line.partition("=")
+                if key.strip() in ("version_info", "version"):
+                    major, minor = value.strip().split(".")[:2]
+                    return (int(major), int(minor))
+    except (OSError, ValueError):
+        pass
+    return None
+
+
 def venv_ok(venv):
-    """True when the venv has a python and its req stamp matches tui-requirements.txt."""
+    """True when the venv has a python at or above MIN_PY and its req stamp matches
+    tui-requirements.txt."""
     if not os.path.isfile(venv_python(venv)):
+        return False
+    v = venv_py_version(venv)
+    if v is None or v < MIN_PY:
         return False
     try:
         with open(os.path.join(venv, STAMP), encoding="utf-8") as f:
@@ -65,29 +233,63 @@ def venv_ok(venv):
         return False
 
 
-def _run(cmd):
-    r = subprocess.run(cmd, capture_output=True, text=True)
+def _run(cmd, env=None):
+    r = subprocess.run(cmd, capture_output=True, text=True, env=env)
     if r.returncode != 0:
         raise RuntimeError(f"{' '.join(cmd[:3])}… exited {r.returncode}: "
                            f"{(r.stderr or r.stdout).strip()[:200]}")
 
 
-def ensure_venv(venv):
-    """Create/refresh the private venv and install the pins; rewrite .req-sha.
-    uv when present, else python3 -m venv + pip. Raises RuntimeError on failure."""
-    if venv_ok(venv):
-        return
-    if not os.path.isdir(venv):
-        os.makedirs(venv, exist_ok=True)
-        uv = shutil.which("uv")
-        if uv:
-            _run([uv, "venv", venv])
-        else:
-            _run(["python3", "-m", "venv", venv])
-    py = venv_python(venv)
+def create_venv(venv):
+    """(Re)build the venv on an interpreter >= MIN_PY, clearing whatever is there.
+    Route order — nothing here needs admin rights or Homebrew:
+      1. a local Python >= MIN_PY (Homebrew's counts when present), via uv on PATH or stdlib venv
+      2. uv on PATH asked for >= MIN_PY (it downloads a managed Python when none is local)
+      3. the pinned private uv (downloaded into the home dir), likewise
+    Returns the uv used (later pip installs must use it: uv venvs carry no pip), or None.
+    Refuses to clear a non-empty directory that is not a venv (an override path)."""
+    if os.path.isdir(venv) and os.listdir(venv) and \
+            not os.path.isfile(os.path.join(venv, "pyvenv.cfg")):
+        raise RuntimeError(f"{venv} is not empty and not a venv — refusing to clear it")
+    floor = ">={}.{}".format(*MIN_PY)
+    base = find_base_python()
     uv = shutil.which("uv")
     if uv:
-        _run([uv, "pip", "install", "--python", py, "-r", REQS, "-r", DEV_REQS])
+        try:
+            _run([uv, "venv", "--clear", "--python", base or floor, venv], env=uv_env())
+            return uv
+        except RuntimeError:
+            if not base:
+                raise
+    if base:
+        _run([base, "-m", "venv", "--clear", venv])
+        return None
+    try:
+        uv = private_uv()
+    except RuntimeError as exc:
+        raise RuntimeError(f"{NEED_PY} ({exc})") from exc
+    if not uv:
+        raise RuntimeError(NEED_PY)
+    _run([uv, "venv", "--clear", "--python", floor, venv], env=uv_env())
+    return uv
+
+
+def ensure_venv(venv):
+    """Create/refresh the private venv and install the pins; rewrite .req-sha.
+    A missing venv, or one built on a Python below MIN_PY, is rebuilt first.
+    Raises RuntimeError on failure."""
+    if venv_ok(venv):
+        return
+    v = venv_py_version(venv)
+    uv = None
+    if not os.path.isfile(venv_python(venv)) or v is None or v < MIN_PY:
+        uv = create_venv(venv)
+    py = venv_python(venv)
+    uv = uv or shutil.which("uv") or cached_private_uv()
+    if not uv and not os.path.exists(os.path.join(venv, "bin", "pip")):
+        uv = private_uv()  # a uv-built venv has no pip of its own
+    if uv:
+        _run([uv, "pip", "install", "--python", py, "-r", REQS, "-r", DEV_REQS], env=uv_env())
     else:
         _run([py, "-m", "pip", "install", "-r", REQS, "-r", DEV_REQS])
     with open(os.path.join(venv, STAMP), "w", encoding="utf-8") as f:

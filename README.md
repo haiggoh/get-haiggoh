@@ -85,8 +85,19 @@ are available by bare name in your own shell. `get-haiggoh` with no arguments op
 
 A plugin opts in by shipping a `shortcuts` file at its root, one command per line (`#` comments
 allowed); each command must exist as an executable in that plugin's `bin/`. get-haiggoh writes a
-small launcher for each into `~/.local/bin` (make sure that directory is on your PATH). The
-launcher looks up the installed plugin version each time it runs, so plugin updates never break it.
+small launcher for each into `~/.local/bin`. The launcher looks up the installed plugin version
+each time it runs, so plugin updates never break it.
+
+Stock macOS does not put `~/.local/bin` on PATH. When it is missing, `apply` and the
+SessionStart hook add one labelled block to your login shell's startup file (`~/.zprofile` for
+zsh, the first existing of `.bash_profile`/`.bash_login`/`.profile` for bash), back the file up
+first, and tell you; open a new terminal afterwards. `get-haiggoh shims path` shows the state,
+`get-haiggoh shims path --undo` removes the block, and `GET_HAIGGOH_NO_PATH_EDIT=1` turns it off.
+
+The TUI needs Python >= 3.10 for its private venv. It uses one you already have (Homebrew's
+counts); otherwise it downloads a pinned, checksum-verified `uv` into
+`~/.local/share/get-haiggoh/tools`, which fetches a standalone Python into your home
+directory. No Homebrew and no administrator rights are needed.
 
 ```bash
 get-haiggoh shims                              # dry run: what would be created
