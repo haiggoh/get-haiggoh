@@ -33,6 +33,14 @@ def run_script(script, args, env):
                           text=True, env=env, timeout=60)
 
 
+def fake_python(tmp, name, major_minor):
+    """An executable that answers the version probe like a real interpreter would."""
+    f = Path(tmp) / name
+    f.write_text(f'#!/bin/sh\necho "{major_minor}"\n')
+    f.chmod(0o755)
+    return f
+
+
 def base_env(tmp, **extra):
     env = {
         "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
@@ -109,6 +117,7 @@ class BootstrapTests(unittest.TestCase):
             venv = tmp / "venv"
             (venv / "bin").mkdir(parents=True)
             (venv / "bin" / "python").write_text("#!/bin/sh\n")
+            (venv / "pyvenv.cfg").write_text("version_info = 3.12.4\n")
             (venv / ".req-sha").write_text("stale")
             self.assertFalse(mod.venv_ok(venv))
             (venv / ".req-sha").write_text(mod.req_sha())
@@ -132,6 +141,82 @@ class BootstrapTests(unittest.TestCase):
             self.assertTrue(log.exists() and "pip" in log.read_text(), "uv pip install ran")
             self.assertEqual((venv / ".req-sha").read_text().strip(), mod.req_sha())
             self.assertTrue(mod.venv_ok(venv))
+
+    def test_venv_on_python_below_floor_is_not_ok(self):
+        # a venv built by macOS's /usr/bin/python3 (3.9) can never install the pins
+        # (markdown-it-py 4 etc. need >=3.10), so a matching stamp must not save it
+        mod = load_bootstrap()
+        with tempfile.TemporaryDirectory() as d:
+            venv = Path(d) / "venv"
+            (venv / "bin").mkdir(parents=True)
+            (venv / "bin" / "python").write_text("#!/bin/sh\n")
+            (venv / ".req-sha").write_text(mod.req_sha())
+            (venv / "pyvenv.cfg").write_text("home = /usr/bin\nversion = 3.9.6\n")
+            self.assertFalse(mod.venv_ok(venv))
+            (venv / "pyvenv.cfg").write_text("home = /x\nversion_info = 3.12.4\n")
+            self.assertTrue(mod.venv_ok(venv))
+
+    def test_find_base_python_skips_interpreters_below_floor(self):
+        mod = load_bootstrap()
+        with tempfile.TemporaryDirectory() as d:
+            tmp = Path(d)
+            old, new = fake_python(tmp, "py39", "3 9"), fake_python(tmp, "py312", "3 12")
+            self.assertIsNone(mod.find_base_python([str(old)]))
+            self.assertEqual(mod.find_base_python([str(old), str(new)]), str(new))
+
+    def test_old_venv_is_recreated_with_a_floor_python(self):
+        # the sticky case: a first run on 3.9 left a venv behind; the next run must
+        # rebuild it (uv venv --clear --python <floor>) instead of re-pipping into it
+        mod = load_bootstrap()
+        with tempfile.TemporaryDirectory() as d:
+            tmp = Path(d)
+            venv = tmp / "venv"
+            (venv / "bin").mkdir(parents=True)
+            (venv / "bin" / "python").write_text("#!/bin/sh\n")
+            (venv / "pyvenv.cfg").write_text("version = 3.9.6\n")
+            fakebin = tmp / "fb"
+            fakebin.mkdir()
+            log = tmp / "uv.log"
+            uv = fakebin / "uv"
+            uv.write_text(f'#!/bin/sh\necho "$@" >> "{log}"\n'
+                          f'case "$1" in venv) printf "version_info = 3.12.4\\n" > "{venv}/pyvenv.cfg";; esac\n')
+            uv.chmod(0o755)
+            old = os.environ["PATH"]
+            os.environ["PATH"] = f"{fakebin}:{old}"
+            try:
+                mod.ensure_venv(str(venv))
+            finally:
+                os.environ["PATH"] = old
+            calls = log.read_text().splitlines()
+            self.assertTrue(calls[0].startswith("venv --clear --python"), calls)
+            self.assertIn("pip install", calls[1])
+            self.assertTrue(mod.venv_ok(venv))
+
+    def test_no_floor_python_and_no_uv_names_the_fix(self):
+        mod = load_bootstrap()
+        with tempfile.TemporaryDirectory() as d:
+            tmp = Path(d)
+            old = os.environ["PATH"]
+            os.environ["PATH"] = str(tmp)  # no uv anywhere
+            try:
+                mod.find_base_python = lambda candidates=None: None
+                with self.assertRaises(RuntimeError) as cm:
+                    mod.ensure_venv(str(tmp / "venv"))
+            finally:
+                os.environ["PATH"] = old
+            msg = str(cm.exception)
+            self.assertIn("3.10", msg)
+            self.assertIn("brew install", msg)
+
+    def test_refuses_to_clear_a_non_venv_directory(self):
+        mod = load_bootstrap()
+        with tempfile.TemporaryDirectory() as d:
+            target = Path(d) / "precious"
+            target.mkdir()
+            (target / "notes.txt").write_text("keep me")
+            with self.assertRaises(RuntimeError):
+                mod.ensure_venv(str(target))
+            self.assertEqual((target / "notes.txt").read_text(), "keep me")
 
     def test_check_reports_state_and_changes_nothing(self):
         with tempfile.TemporaryDirectory() as d:
