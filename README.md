@@ -1,82 +1,71 @@
 # 👨🏻‍💻 get-haiggoh
 
-CLI tool to manage haiggoh plugins for Claude Code.
+**The front door to every haiggoh plugin for Claude Code.** One menu to browse them, install
+the ones you want and keep them all up to date.
 
-The haiggoh plugins' emoji-branding rules (credit moments, the marks table, the
-never-brand list) live in [docs/branding.md](docs/branding.md).
+## Get started
 
-## Usage
+Three steps, all typed **inside Claude Code**:
 
-### Direct Usage
-```bash
-# See what would be installed/updated (dry run)
-./bin/get-haiggoh.py plan
+**1. Add the haiggoh marketplace**
 
-# Actually install/update plugins
-./bin/get-haiggoh.py apply
-
-# Limit to specific plugins
-./bin/get-haiggoh.py plan --only video-use,waypoints
-./bin/get-haiggoh.py apply --only video-use,waypoints
-
-# Limit to specific category
-./bin/get-haiggoh.py plan --category utility
-./bin/get-haiggoh.py apply --category utility
-
-# Show help
-./bin/get-haiggoh.py --help
+```
+/plugin marketplace add haiggoh/get-haiggoh
 ```
 
-### Interactive TUI (default on a terminal)
-A bare `get-haiggoh` on a terminal opens the CSL-style TUI (`bin/get-haiggoh-tui`
-bootstraps a private venv with pinned Textual and falls back to the plain menu on any
-failure; `get-haiggoh-tui --check` reports the venv state, `--plain` forces the menu):
+**2. Install get-haiggoh**
 
-```bash
-get-haiggoh                 # opens the TUI on a TTY
-get-haiggoh-tui --check     # venv state, changes nothing
+```
+/plugin install get-haiggoh@haiggoh
+/reload-plugins
 ```
 
-The TUI lists every haiggoh plugin and the related tools (transcript-distiller,
-human-shell, mac-claude-migration, mac-iphone-backup-cloudsync) with installed/latest
-status columns; tick rows with `space`, bulk `u` update / `i` install / `x` uninstall,
-`a`/`n` select/unselect all, `enter` opens the item's own menu, and an info box
-explains the highlighted item. From inside Claude Code, `/get-haiggoh` with no task
-runs `bin/get-haiggoh-open-window` to open the TUI in its own Terminal.app window.
+**3. Open the menu**
 
-### Menu-Driven Usage (plain fallback)
-For the plain numbered menu directly:
-```bash
-./bin/get-haiggoh-menu
+```
+/get-haiggoh
 ```
 
-The menu-driven interface provides:
-- **Default action** (press Enter or choose 2) is to install/update all plugins
-- Option 1: Plan all plugins (dry run)
-- Option 2: Apply all plugins (install/update) [DEFAULT]
-- Option 3: Plan specific plugins (by name or category)
-- Option 4: Apply specific plugins (by name or category)
-- Option 5: Exit
+The menu opens in its own Terminal window. Every haiggoh plugin is listed there with what you
+have installed and what is available.
 
-When choosing specific plugin options, you can enter:
-- `--only name1,name2` to limit to specific plugins
-- `--category NAME` to limit to plugins in a specific category
-- Leave empty (just press Enter) to operate on all plugins
+That's all you need. Everything below is optional.
 
-## Examples
+## Using the menu
+
+| Key | What it does |
+|---|---|
+| `↑` `↓` | move between plugins (the box at the bottom explains the highlighted one) |
+| `space` | tick or untick a plugin |
+| `i` / `u` / `x` | install / update / uninstall the ticked plugins |
+| `a` / `n` | tick all / untick all |
+| `enter` | open the highlighted plugin's own menu |
+| `q` | quit |
+
+Besides the plugins, the menu also lists related haiggoh tools (transcript-distiller,
+human-shell, mac-claude-migration, mac-iphone-backup-cloudsync).
+
+You can also just ask Claude: *"update all my haiggoh plugins"* shows you what would change and
+asks before it installs anything.
+
+## From your own terminal
+
+Once get-haiggoh is installed it puts a `get-haiggoh` command on your PATH (see
+[PATH shortcuts](#path-shortcuts)), so the same tool works outside Claude Code:
+
 ```bash
-# Interactive menu - install/update all plugins (default)
-./bin/get-haiggoh-menu
-# Just press Enter at the menu
-
-# Interactive menu - plan specific plugins
-./bin/get-haiggoh-menu
-# Choose option 3, then enter: --only video-use,waypoints
-
-# Interactive menu - apply updates to utility category
-./bin/get-haiggoh-menu
-# Choose option 4, then enter: --category utility
+get-haiggoh                              # open the menu
+get-haiggoh plan                         # show what would be installed or updated (changes nothing)
+get-haiggoh apply                        # install / update everything
+get-haiggoh apply --only waypoints,video-use   # just these plugins
+get-haiggoh apply --category utility     # just one category
+get-haiggoh --help                       # every command and option
 ```
+
+If the menu can't start (for example no usable Python yet), `get-haiggoh` falls back to a plain
+numbered menu: press Enter to install/update everything. `get-haiggoh-tui --check` tells you why
+the full menu is unavailable without changing anything, and `get-haiggoh-tui --plain` (or
+`bin/get-haiggoh-menu`) opens the plain menu on purpose.
 
 ## PATH shortcuts
 
@@ -105,6 +94,13 @@ ln -sfn "$(cat ~/.local/state/get-haiggoh/shim-backups/<name>.<stamp>.link)" ~/.
 The SessionStart hook also adds missing shortcuts, but only ones that collide with nothing.
 Environment: `GET_HAIGGOH_NO_SHIMS=1` disables shortcut creation; `GET_HAIGGOH_SHIM_DIR` and
 `GET_HAIGGOH_SHIM_BACKUP_DIR` move the two directories (`get-haiggoh --help` lists all).
+
+---
+
+# Reference
+
+*You don't need anything below to use get-haiggoh. It covers troubleshooting and notes for
+people who build haiggoh plugins.*
 
 ## Verifying versions on restrictive networks
 
@@ -228,10 +224,13 @@ good use — holding consumers at a known-good version after a bad release — w
 deliberate, visible act with an obvious removal trigger. Reaching for it to avoid a merge
 trades a one-line merge for silent, published, mutable state.
 
-## Installation
-This tool is typically installed as part of the get-haiggoh package. The scripts are located in the `bin/` directory:
+## What's in this repo
 
-- `bin/get-haiggoh.py` - Direct command-line interface
-- `bin/get-haiggoh-menu` - Menu-driven interface
+- `bin/get-haiggoh` — the `get-haiggoh` command (opens the menu, or runs `plan`/`apply`/`shims`)
+- `bin/get-haiggoh-tui` — the full-screen menu; builds its own private Python environment on first run
+- `bin/get-haiggoh-menu` — the plain numbered menu it falls back to
+- `bin/get-haiggoh.py` — the command-line engine behind all of them
+- `.claude-plugin/marketplace.json` — the haiggoh marketplace catalog itself
 
-Both scripts are designed to be run from the repository root or via their absolute paths.
+The emoji-branding rules shared by the haiggoh plugins (credit moments, the marks table, the
+never-brand list) live in [docs/branding.md](docs/branding.md).
