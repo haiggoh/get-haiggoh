@@ -90,7 +90,7 @@
     "skills/get-haiggoh/SKILL.md": "0216b21aa93632f3b6d718f4a7a37b16ec2a362d4172efd2f86d97cbf1abcc51"
   },
   "schema": "haiggoh-portable-build/1",
-  "source_commit": "9661c36a3933a2f7e73b3321712e1f843b67c02f",
+  "source_commit": "097f27d63f86de1d6b39b43a702f1a1523eca8ef",
   "source_repo": "haiggoh/get-haiggoh",
   "transform_version": "1"
 }
