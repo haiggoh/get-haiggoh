@@ -28,3 +28,7 @@ OptionList > .option-list--option-nonlink { background: ansi_default; color: ans
 OptionList > .option-list--option-disabled { background: ansi_default; color: ansi_bright_black; }
 Input { background: ansi_default; color: ansi_default; border: round ansi_bright_black; } /* as CSL */
 Static { background: ansi_default; color: ansi_default; }
+/* live-run closing report (RunReportScreen); the dim runstatus option reuses the
+   existing disabled-option grey (ansi_bright_black), the same grey as #summary */
+#report-title { text-style: bold; padding: 0 1; }
+#report-text { padding: 0 1; max-height: 20; }

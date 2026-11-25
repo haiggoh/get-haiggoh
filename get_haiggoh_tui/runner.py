@@ -438,6 +438,18 @@ def consume_pending(path) -> dict | None:
     return data
 
 
+def relaunch_with_pending(op, rest_steps, pending_path, execv) -> None:
+    """Dedupe names → write_pending → execv bin/get-haiggoh-tui --resume, so the NEW
+    process finishes the rest of the bulk run."""
+    names: list[str] = []
+    for s in rest_steps:
+        if s.name not in names:
+            names.append(s.name)
+    write_pending(pending_path, op, names)
+    script = REPO_ROOT / "bin" / "get-haiggoh-tui"
+    execv(str(script), [str(script), "--resume"])
+
+
 def self_update_then_relaunch(steps, pending_path, execv=os.execv, execute=subprocess.run,
                               reread=build_rows) -> bool:
     """If the first step is get-haiggoh and more follow: run the self-update on the old
@@ -447,11 +459,5 @@ def self_update_then_relaunch(steps, pending_path, execv=os.execv, execute=subpr
         return False
     first, rest = steps[0], steps[1:]
     run_steps([first], execute=execute, reread=reread)
-    names: list[str] = []
-    for s in rest:
-        if s.name not in names:
-            names.append(s.name)
-    write_pending(pending_path, first.op, names)
-    script = REPO_ROOT / "bin" / "get-haiggoh-tui"
-    execv(str(script), [str(script), "--resume"])
+    relaunch_with_pending(first.op, rest, pending_path, execv)
     return True  # only reached when execv is faked

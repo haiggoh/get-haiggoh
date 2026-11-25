@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import time
 
 from textual import on
 from textual.binding import Binding
@@ -21,6 +22,7 @@ from rich.text import Text
 from .brew_gate import BUTTONS, INSTALL_ARGV, decline_lines, notice_text
 from .menuspec import actions_with_back, build_argv
 from .routes import SELF_NAME
+from .runstate import EMOJI, spinner_frames
 
 
 class HoverOptionList(OptionList):
@@ -61,14 +63,19 @@ class HoverOptionList(OptionList):
         return strips[offset] if offset < len(strips) else super().render_line(y)
 
 
-def row_label(r, ticked: bool, mode: str | None = None, eligible: bool = True) -> Text:
+def row_label(r, ticked: bool, mode: str | None = None, eligible: bool = True,
+              deco: str | None = None) -> Text:
     """A plain Text, never a markup string: as markup `[x]` parses as a style tag and is
     dropped, so ticked rows drew no box at all (user 2026-11-09). Browse mode (mode None)
-    has no box; in a mode eligible rows get [x]/[ ] and the rest a blank of the same width."""
+    has no box; in a mode eligible rows get [x]/[ ] and the rest a blank of the same width.
+    With `deco` (a live-run decoration) the body is f"{mark} {name:<26} {deco}"."""
     status = {"current": "✓", "outdated": r.latest or "",
               "missing": "not installed", "unverified": "? unverified"}[r.status]
     installed = r.installed if r.installed else "—"
-    body = f"{r.mark} {r.name:<26} {installed:>8}  {status}"
+    if deco is not None:
+        body = f"{r.mark} {r.name:<26} {deco}"
+    else:
+        body = f"{r.mark} {r.name:<26} {installed:>8}  {status}"
     if mode is None:
         return Text(body)
     box = ("[x]" if ticked else "[ ]") if eligible else "   "
@@ -134,10 +141,39 @@ class MainScreen(Screen):
         return f"{keys} · get-haiggoh {app.version}"
 
     def on_mount(self):
+        self._frame = 0
+        self._frames = spinner_frames()
+        self.set_interval(0.15, self._tick_run)  # B2: the repaint cadence IS the heartbeat
         self.apply_mode()
         self.rebuild_rows()
         self.app.refresh_buttons()
         self.query_one("#rows").focus()
+
+    def _tick_run(self):
+        """150 ms repaint while a run is live: spinner frame, bar, dim line, subtitle."""
+        app = self.app
+        if not app.run_active:
+            return
+        state = app.run_state
+        self._frame += 1
+        now = time.monotonic()
+        ol = self.query_one("#rows", HoverOptionList)
+        ids = [o.id for o in ol.options]
+        width = ol.scrollable_content_region.width or 80
+        if state is not None and state.current is not None and state.current.name in ids:
+            r = next((r for r in app.rows if r.name == state.current.name), None)
+            if r is not None:
+                deco = state.row_decoration(r, self._frame, now, self._frames)
+                ol.replace_option_prompt_at_index(
+                    ids.index(state.current.name),
+                    row_label(r, r.name in app.ticks, app.mode,
+                              app.eligible(r) if app.mode else True, deco=deco))
+        if "runstatus" in ids:
+            ol.replace_option_prompt_at_index(
+                ids.index("runstatus"),
+                Text(state.dim_line(self._frame, now, width, self._frames)))
+        if state is not None:
+            self.query_one("#subtitle", Static).update(state.subtitle(now))
 
     def apply_mode(self):
         app = self.app
@@ -172,12 +208,27 @@ class MainScreen(Screen):
                     options.append(Option("", id=f"gap:{section}", disabled=True))
                 for r in group:
                     eligible = app.eligible(r) if app.mode else True
-                    options.append(Option(row_label(r, r.name in app.ticks, app.mode, eligible),
+                    deco = None
+                    if app.run_state is not None:  # R3: a rebuild mid-run re-derives it
+                        deco = app.run_state.row_decoration(
+                            r, getattr(self, "_frame", 0), time.monotonic(),
+                            getattr(self, "_frames", None) or spinner_frames())
+                    options.append(Option(row_label(r, r.name in app.ticks, app.mode, eligible,
+                                                    deco=deco),
                                           id=r.name, disabled=not eligible))
         # actions after the repos, in their own group — CSL renders them "  Q) Quit"
         # (session_picker.py:1737); quit is one in every mode (user 2026-11-09)
         options.append(Option("", id="gap:actions", disabled=True))
         options.append(Option(Text("  Q) Quit"), id="action:quit"))
+        if app.run_active and app.run_state is not None:
+            # D5: one blank gap row, then the dim live-status line — only while running
+            state = app.run_state
+            width = ol.scrollable_content_region.width or 80
+            frames = getattr(self, "_frames", None) or spinner_frames()
+            options.append(Option("", id="gap:runstatus", disabled=True))
+            options.append(Option(Text(state.dim_line(getattr(self, "_frame", 0),
+                                                      time.monotonic(), width, frames)),
+                                  id="runstatus", disabled=True))
         ol.nonlink_ids = set() if app.mode else {r.name for r in app.rows if not r.menu}
         ol.add_options(options)
         enabled = [i for i, o in enumerate(ol.options) if not o.disabled]
@@ -215,6 +266,8 @@ class MainScreen(Screen):
         # arrives here as OptionSelected on #rows
         if event.option_list.id != "rows":
             return
+        if self.app.run_active and event.option.id != "action:quit":
+            return  # B5: enter-to-run / open is inert while a run is live
         if event.option.id == "action:quit":
             self.action_quit()
             return
@@ -231,11 +284,15 @@ class MainScreen(Screen):
             ol.action_cursor_up()
 
     def action_back(self):
+        if self.app.run_active:
+            return  # Task 7 wires escape to the cancel dialogs
         if self.app.mode:
             self.app.leave_mode()
 
     def _run_mode(self):
         app = self.app
+        if app.run_active:
+            return  # B5: no second run while one is live
         mode = app.mode
         if not any(r.name in app.ticks and app.eligible(r) for r in app.rows):
             app.notify(f"Nothing ticked to {mode}.", severity="warning")
@@ -249,6 +306,8 @@ class MainScreen(Screen):
         app.run_op(mode)
 
     def _mode_key(self, mode: str):
+        if self.app.run_active:
+            return  # B5: mode keys are inert during a run
         # first press enters the mode; the same key again runs it (user 2026-11-09)
         if self.app.mode == mode:
             self._run_mode()
@@ -256,8 +315,8 @@ class MainScreen(Screen):
             self.app.enter_mode(mode)
 
     def action_tick(self):
-        if not self.app.mode:
-            return  # browse mode has no checkboxes
+        if self.app.run_active or not self.app.mode:
+            return  # B5 / browse mode has no checkboxes
         row = self._row_at(self.query_one("#rows", HoverOptionList).highlighted)
         if row and not self.app.eligible(row):
             return
@@ -270,14 +329,14 @@ class MainScreen(Screen):
             self.app.refresh_buttons()
 
     def action_all(self):
-        if not self.app.mode:
+        if self.app.run_active or not self.app.mode:
             return
         self.app.ticks = {r.name for r in self.app.rows if self.app.eligible(r)}
         self.rebuild_rows()
         self.app.refresh_buttons()
 
     def action_none(self):
-        if not self.app.mode:
+        if self.app.run_active or not self.app.mode:
             return
         self.app.ticks = set()
         self.rebuild_rows()
@@ -325,30 +384,45 @@ class MainScreen(Screen):
             ol.highlighted = idx  # return to the same highlighted row
 
     def action_quit(self):
+        if self.app.run_active:
+            self.app.notify("Run in progress — esc to cancel")  # B5: never orphan a run
+            return
         self.app.exit()
 
     @on(Button.Pressed, "#btn-all")
     def _b_all(self):
+        if self.app.run_active:
+            return
         self.action_all()
 
     @on(Button.Pressed, "#btn-none")
     def _b_none(self):
+        if self.app.run_active:
+            return
         self.action_none()
 
     @on(Button.Pressed, "#btn-update")
     def _b_update(self):
+        if self.app.run_active:
+            return
         self.action_update()
 
     @on(Button.Pressed, "#btn-install")
     def _b_install(self):
+        if self.app.run_active:
+            return
         self.action_install()
 
     @on(Button.Pressed, "#btn-abort")
     def _b_abort(self):
+        if self.app.run_active:
+            return
         self.action_back()
 
     @on(Button.Pressed, "#btn-uninstall")
     def _b_uninstall(self):
+        if self.app.run_active:
+            return
         self.action_uninstall()
 
 
@@ -472,32 +546,47 @@ class BrewNoticeScreen(ModalScreen):
         self.action_decline()
 
 
-class ProgressScreen(ModalScreen):
-    """Runs the planned steps via the injectable runner and lists failures with their
-    output; the final state is re-read from disk (the runner decides ok), never from
-    exit codes."""
+class RunReportScreen(ModalScreen):
+    """Closing report of a bulk run: one line per result — ✓ name (route), or
+    ✗ name — route: <first non-empty output line[:100]> / timed out / cancelled,
+    – name — skipped. enter / escape / Done dismiss."""
 
-    def __init__(self, op, steps):
+    BINDINGS = [Binding("enter", "dismiss", "done", show=False),
+                Binding("escape", "dismiss", "done", show=False)]
+
+    def __init__(self, op, results, error: str | None = None):
         super().__init__()
         self.op = op
-        self.steps = list(steps)
+        self.results = list(results)
+        self.error = error
 
     def compose(self):
-        yield Static(f"Running {self.op}…", id="progress-title")
-        yield Static("", id="progress-out")
-        yield Button("Done", id="btn-done")
+        k = sum(1 for r in self.results if r.ok)
+        m = len(self.results) - k  # failed = every non-ok, skipped included
+        yield Static(f"{EMOJI[self.op]} {self.op.capitalize()} report — {k} ok · {m} failed",
+                     id="report-title")
+        yield Static(self._body(), id="report-text")
+        with Horizontal(id="buttons"):
+            yield Button("Done", id="btn-done")
 
-    def on_mount(self):
-        app = self.app
-        results = app.runner(self.steps)
-        lines = []
-        for res in results:
-            mark = "✓" if res.ok else "✗"
-            lines.append(f"{mark} {res.step.name} ({res.step.route})")
-            if not res.ok and res.output:
-                lines.append("    " + res.output.strip().splitlines()[0][:100] if res.output.strip() else "")
-        self.query_one("#progress-out", Static).update("\n".join(lines))
-        app.refresh_after_run()
+    def _body(self):
+        lines = [self.error] if self.error else []
+        for res in self.results:
+            if res.ok:
+                lines.append(f"✓ {res.step.name} ({res.step.route})")
+            elif res.outcome == "timed_out":
+                lines.append(f"✗ {res.step.name} — timed out")
+            elif res.outcome == "cancelled":
+                lines.append(f"✗ {res.step.name} — cancelled")
+            elif res.outcome == "skipped":
+                lines.append(f"– {res.step.name} — skipped")
+            else:
+                first = next((ln for ln in res.output.splitlines() if ln.strip()), "")
+                lines.append(f"✗ {res.step.name} — {res.step.route}: {first[:100]}")
+        return "\n".join(lines)
+
+    def action_dismiss(self):
+        self.dismiss()
 
     @on(Button.Pressed, "#btn-done")
     def _d(self):

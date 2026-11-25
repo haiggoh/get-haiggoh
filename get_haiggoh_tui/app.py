@@ -9,19 +9,23 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from pathlib import Path
 
 from textual import work
 from textual.app import App
+from textual.geometry import Region
 
 from . import screens as scr
 from .brew_gate import needs_brew
 from .inventory import Row
 from .menuspec import menu_for
 from .routes import SELF_NAME, brew_path, plan_steps
-from .runner import consume_pending, read_pending, run_steps, self_update_then_relaunch
+from .runner import (RunControl, consume_pending, read_pending, relaunch_with_pending,
+                     run_steps, step_timeout_from_env)
+from .runstate import RunState
 from .selection import mark_first_run_done
-from .status import build_rows
+from .status import build_rows, reread_row
 
 
 def _state_path() -> Path:
@@ -90,7 +94,7 @@ class GetHaiggohApp(App):
     def __init__(self, rows_loader=build_rows, runner=run_steps, state_path=None,
                  pending_path=None, brew_present=None, resume=False, menu_for=menu_for,
                  legacy_runner=None, installer_runner=None, verify_installed=None,
-                 execv=None, suspend_fn=None):
+                 execv=None, suspend_fn=None, reread_one=None):
         # CSL's current look (session_picker.py R5): textual-ansi theme + ANSI colours, so
         # no painted background — the terminal's own light/dark theme shows through
         # driver_class MUST go through __init__: Textual's App.__init__ assigns
@@ -119,6 +123,12 @@ class GetHaiggohApp(App):
         self.installer_runner = installer_runner
         self.verify_installed = verify_installed or (lambda: brew_path() is not None)
         self.execv = execv
+        self.reread_one = reread_one if reread_one is not None else reread_row
+        self.run_state: RunState | None = None
+        self._run_control: RunControl | None = None
+        self._relaunch_rest = None
+        self._carried_results = None
+        self._run_op = "update"
         self.rows: list[Row] = []
         self.ticks: set[str] = set()
         self.summary = ""
@@ -216,13 +226,6 @@ class GetHaiggohApp(App):
             screen.rebuild_rows()
             self.refresh_buttons()
 
-    def refresh_after_run(self):
-        """Re-read rows from disk after a run (the runner's ok already came from state)."""
-        try:
-            self._apply_rows(list(self.rows_loader(False)))
-        except Exception:
-            pass
-
     # --- summary / info box --------------------------------------------------
     def refresh_summary(self):
         if self.refresh_failed and not self.rows:
@@ -294,6 +297,147 @@ class GetHaiggohApp(App):
         self.mode = None  # the run starts: back to browse mode when the list comes back
         self._redraw_main()
         if any(s.name == SELF_NAME for s in steps) and len(steps) > 1 and self.execv is not None:
-            self_update_then_relaunch(steps, self.pending_path, execv=self.execv)
+            # B8 (changed): the self-update runs through the SAME live worker; only if
+            # it ends ok does the process relaunch for the rest of the steps
+            self._relaunch_rest = (op, [s for s in steps if s.name != SELF_NAME])
+            self._start_run(op, [s for s in steps if s.name == SELF_NAME])
             return
-        self.push_screen(scr.ProgressScreen(op, steps))
+        self._start_run(op, steps)
+
+    @property
+    def run_active(self) -> bool:
+        return self.run_state is not None
+
+    def _start_run(self, op, steps):
+        try:
+            timeout = step_timeout_from_env()
+        except ValueError as exc:
+            self.notify(str(exc), severity="error")  # invalid override: refuse to run
+            return
+        self._run_op = op
+        control = RunControl()
+        self._run_control = control
+        self.run_state = RunState(op=op, steps=list(steps), started=time.monotonic())
+        self._redraw_main()  # appends the gap + dim runstatus options, paints decorations
+        self._run_worker(op, steps, control, timeout)
+
+    @work(thread=True, exit_on_error=False, group="run", exclusive=True)
+    def _run_worker(self, op, steps, control, timeout):
+        state = self.run_state
+
+        def on_event(e):
+            if e[0] == "output":
+                if state is not None:
+                    state.note_output(e[2])  # no call_from_thread per line (R2)
+            else:
+                self.call_from_thread(self._on_run_event, e)
+
+        results, error = [], None
+        try:
+            results = self.runner(steps, on_event=on_event, control=control, timeout=timeout,
+                                  rows=list(self.rows), reread_one=self.reread_one)
+        except Exception as exc:
+            error = f"run crashed: {exc}"
+        finally:
+            try:
+                self.call_from_thread(self._finish_run, results, error)
+            except RuntimeError:
+                pass  # app is shutting down
+
+    def _on_run_event(self, e):
+        """UI thread: start/result events update the RunState and repaint one row."""
+        state = self.run_state
+        if state is None:
+            return
+        if e[0] == "start":
+            state.on_start(e[1], time.monotonic())
+            self._repaint_run_row(e[1].name)
+            self._scroll_row_into_view(e[1].name)
+        elif e[0] == "result":
+            state.on_result(e[1])
+            self._repaint_run_row(e[1].step.name)
+
+    def _repaint_run_row(self, name):
+        screen = self.screen
+        if not isinstance(screen, scr.MainScreen):
+            return
+        ol = screen.query_one("#rows", scr.HoverOptionList)
+        ids = [o.id for o in ol.options]
+        if name not in ids:
+            return
+        r = next((r for r in self.rows if r.name == name), None)
+        if r is None:
+            return
+        state = self.run_state
+        deco = (state.row_decoration(r, screen._frame, time.monotonic(), screen._frames)
+                if state is not None else None)
+        ol.replace_option_prompt_at_index(
+            ids.index(name),
+            scr.row_label(r, r.name in self.ticks, self.mode,
+                          self.eligible(r) if self.mode else True, deco=deco))
+
+    def _scroll_row_into_view(self, name):
+        screen = self.screen
+        if not isinstance(screen, scr.MainScreen):
+            return
+        ol = screen.query_one("#rows", scr.HoverOptionList)
+        ids = [o.id for o in ol.options]
+        if name not in ids:
+            return
+        idx = ids.index(name)
+        # ol._lines is private in Textual 3.7.1 — pinned by test_running_row_scrolled_into_view.
+        # _lines is indexed by scroll_offset.y + screen_y, so the option's first content
+        # line is its POSITION in _lines (not the per-option offset).
+        y = next((pos for pos, (i, _off) in enumerate(ol._lines) if i == idx), None)
+        if y is None:
+            return
+        region = ol.scrollable_content_region
+        top = ol.scroll_offset.y
+        if not (top <= y < top + region.height):
+            ol.scroll_to_region(Region(0, y, 1, 1), animate=False)  # never moves highlighted
+
+    def _finish_run(self, results, error):
+        """UI thread, from the worker's finally: unlock, apply after_rows, report."""
+        state = self.run_state
+        if state is not None:
+            state.finished = True
+        self.run_state = None
+        self._run_control = None
+        for res in results:
+            after = getattr(res, "after_row", None)
+            if after is not None:
+                for i, r in enumerate(self.rows):
+                    if r.name == res.step.name:
+                        self.rows[i] = after
+                        break
+        carried = self._carried_results or []
+        all_results = carried + list(results)
+        relaunch = self._relaunch_rest
+        self._relaunch_rest = None
+        if relaunch is not None:
+            op, rest = relaunch
+            if not error and results and all(r.ok for r in results):
+                # the self-update landed: relaunch for the rest, no report (B8)
+                self._redraw_main()
+                self.refresh_buttons()
+                self.refresh_summary()
+                relaunch_with_pending(op, rest, self.pending_path, self.execv)
+                return
+            # the new code never landed: keep the self ✗ and run the rest inline here
+            self._carried_results = all_results
+            self._redraw_main()
+            self.refresh_buttons()
+            self.refresh_summary()
+            self._start_run(op, rest)
+            return
+        self._carried_results = None
+        cancel_types = tuple(t for t in (getattr(scr, "CancelConfirmScreen", None),
+                                         getattr(scr, "CancelModeScreen", None))
+                             if t is not None)
+        if cancel_types and isinstance(self.screen, cancel_types):
+            self.pop_screen()
+        self._redraw_main()
+        self.refresh_buttons()
+        self.refresh_summary()
+        self.push_screen(scr.RunReportScreen(self._run_op, all_results, error))
+        self._refresh_worker()  # full background check; nothing network-bound on this thread

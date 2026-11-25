@@ -74,9 +74,9 @@ class FakeRunner:
 
 def make_app(tmp, rows=None, brew_present=True, menu_for=None, legacy_runner=None,
              installer_runner=None, verify_installed=None, execv=None, runner=None,
-             resume=False, suspend_fn=None):
+             resume=False, suspend_fn=None, rows_loader=None, reread_one=None):
     return GetHaiggohApp(
-        rows_loader=lambda cached: (rows if rows is not None else make_rows()),
+        rows_loader=rows_loader or (lambda cached: (rows if rows is not None else make_rows())),
         runner=runner or FakeRunner(),
         state_path=Path(tmp) / "state.json",
         pending_path=Path(tmp) / "pending.json",
@@ -88,6 +88,7 @@ def make_app(tmp, rows=None, brew_present=True, menu_for=None, legacy_runner=Non
         verify_installed=verify_installed or (lambda: True),
         execv=execv,
         suspend_fn=suspend_fn,
+        reread_one=reread_one,
     )
 
 
