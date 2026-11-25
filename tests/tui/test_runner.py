@@ -455,12 +455,37 @@ class LiveRunTests(unittest.TestCase):
 
         rows = [row("free-agents", "outdated", "0.1", "0.2"),
                 row("waypoints", "outdated", "0.14.3", "0.15.0")]
-        rn.run_steps([fa_plugin, fa_brew, wp], stream=FakeStream(), rows=rows, reread_one=reread_one)
+        results = rn.run_steps([fa_plugin, fa_brew, wp], stream=FakeStream(), rows=rows,
+                               reread_one=reread_one)
         self.assertEqual([b.name for b in seen], ["free-agents", "free-agents", "waypoints"],
                          "exactly one reread per step, and it is that step's row")
         self.assertEqual(seen[0].installed, "0.1")
-        self.assertEqual(seen[1].installed, "0.2",
-                         "the item's second step sees the first step's AFTER row as its before-row")
+        self.assertEqual(seen[1].installed, "0.1",
+                         "every step of an item is judged against the RUN-START row, not the "
+                         "previous step's after-row (waypoint tui-live-run-report-two-step)")
+        self.assertEqual([r.outcome for r in results], ["ok", "ok", "ok"])
+
+    def test_two_step_item_judged_against_run_start_row(self):
+        # regression for waypoint tui-live-run-report-two-step: the second step of a
+        # two-step item was judged against the first step's after-row, so it could
+        # never be ok. Full-sweep mode: both steps ok when the version moved.
+        fa_plugin = step("free-agents", "update", route="plugin")
+        fa_brew = step("free-agents", "update", route="brew", argv=["brew", "upgrade", "x"])
+        before = [row("free-agents", "outdated", "0.1", "0.2")]
+        mid = [row("free-agents", "current", "0.2", "0.2")]
+        after = [row("free-agents", "current", "0.2", "0.2")]
+        results = rn.run_steps([fa_plugin, fa_brew], execute=FakeExec(),
+                               reread=SeqReread([before, mid, after]))
+        self.assertEqual([r.outcome for r in results], ["ok", "ok"],
+                         "both steps of the item are ok when the version moved")
+
+    def test_two_step_item_ok_in_local_mode(self):
+        fa_plugin = step("free-agents", "update", route="plugin")
+        fa_brew = step("free-agents", "update", route="brew", argv=["brew", "upgrade", "x"])
+        rows = [row("free-agents", "outdated", "0.1", "0.2")]
+        results = rn.run_steps([fa_plugin, fa_brew], stream=FakeStream(), rows=rows,
+                               reread_one=self._bump)
+        self.assertEqual([r.outcome for r in results], ["ok", "ok"])
 
     def test_timed_out_wins_over_cancelled(self):
         fs = FakeStream(results_by_name={

@@ -319,6 +319,10 @@ def run_steps(steps, execute=None, reread=build_rows, on_event=lambda e: None,
             rows_map = {r.name: r for r in reread(False)}
         except Exception:
             rows_map = {}
+    # Run-start snapshot: ok is judged per ITEM against this row for every step of the
+    # item, so a two-step item (plugin + brew) is not failed just because the first
+    # step already moved the installed version (waypoint tui-live-run-report-two-step).
+    orig_rows = dict(rows_map)
     stream_fn = stream if stream is not None else stream_execute
     results: list[StepResult] = []
     prev_name: str | None = None
@@ -332,7 +336,7 @@ def run_steps(steps, execute=None, reread=build_rows, on_event=lambda e: None,
             continue
         on_event(("start", step))
         prev_name = step.name
-        before_row = rows_map.get(step.name)
+        before_row = orig_rows.get(step.name)  # run-start row, for ALL steps of the item
         res: ExecResult | None = None
         output, ran = "", False
         if execute is not None:
