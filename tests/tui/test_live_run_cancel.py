@@ -205,7 +205,10 @@ class CancelTests(unittest.TestCase):
                     runner.release.set()
                     await _wait_done(app)
                     assert isinstance(app.screen, scr.RunReportScreen), \
-                        f"_finish_run must pop the cancel dialog, got {type(app.screen).__name__}"
+                        f"_finish_run must push the report, got {type(app.screen).__name__}"
+                    cancel_types = (scr.CancelConfirmScreen, scr.CancelModeScreen)
+                    assert not any(isinstance(s, cancel_types) for s in app.screen_stack), \
+                        "no cancel dialog may be left under the report"
 
             asyncio.run(asyncio.wait_for(go(), 10))
 
