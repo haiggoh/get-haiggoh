@@ -119,3 +119,12 @@ colleagues get it via `get-haiggoh` / `/get-haiggoh` (update) — no manual venv
   "SYN_SENT to a black-holed IPv6 address — full timeout spent"), then 16/16 green;
   get_haiggoh_core.py parses on 3.9.6; portable regen committed, `--check` clean; CHANGELOG
   0.12.0 bullet added.
+- 2026-11-25 free session (Le Chonk): B done — whole-branch diff (c84cda0..HEAD) dispatched to
+  an out-of-family validator via free-agent-tool.py (KAT Coder V2.5, local kwaipilot family;
+  laguna/gemini/step5 routes failed first: RAM preflight, 503, no-reason) → verdict "no
+  findings"; every claim it cited was re-checked against the real code and none survived as
+  actionable, so nothing to fix and no rejections to record. Own verification sweep: every
+  bin/, hooks/, get_haiggoh_*.py parses on /usr/bin/python3 3.9.6 and no 3.10+ syntax is
+  present. Full gate at c7cfb67 green on both halves: `pytest -q -n auto tests` → 360 passed,
+  4 skipped; TUI pilots under the venv → 210 passed; `build-portable.py --check` → clean.
+  Next: C (rtc-ship v0.12.0), D (dogfood the installed copy).
