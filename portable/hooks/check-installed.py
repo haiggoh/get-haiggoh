@@ -80,12 +80,19 @@ def _add_missing_shims(installed):
     try:
         import get_haiggoh_shims as s
         created = []
-        for act in s.plan_shims(installed, policy="skip"):
+        plan = s.plan_shims(installed, policy="skip")
+        for act in plan:
             if act["action"] in ("create", "refresh"):
                 s.apply_action(act)
                 if act["action"] == "create":
                     created.append(act["name"])
-        return ("👨🏻‍💻 get-haiggoh: added PATH shortcuts: " + ", ".join(created)) if created else ""
+        notes = [("👨🏻‍💻 get-haiggoh: added PATH shortcuts: " + ", ".join(created)) if created else ""]
+        # a shortcut only helps once its directory is on the user's PATH (stock macOS: it is
+        # not); ensure_on_path edits the login shell's startup file once and never raises
+        if any(s.is_our_shim(act["path"]) for act in plan):
+            import get_haiggoh_pathrc as pathrc
+            notes.append(pathrc.ensure_on_path(s.shim_dir()))
+        return "\n".join(n for n in notes if n)
     except Exception:
         return ""
 
