@@ -41,6 +41,20 @@ def fake_python(tmp, name, major_minor):
     return f
 
 
+def make_uv_tarball(tmp):
+    """A release-shaped archive (uv-<arch>/uv) holding a fake uv; returns (path, sha256)."""
+    import hashlib
+    import io
+    import tarfile
+    tar = Path(tmp) / "uv-test.tar.gz"
+    body = b'#!/bin/sh\necho "fake-uv"\n'
+    with tarfile.open(tar, "w:gz") as t:
+        info = tarfile.TarInfo("uv-test-arch/uv")
+        info.size, info.mode = len(body), 0o755
+        t.addfile(info, io.BytesIO(body))
+    return tar, hashlib.sha256(tar.read_bytes()).hexdigest()
+
+
 def base_env(tmp, **extra):
     env = {
         "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
@@ -200,13 +214,81 @@ class BootstrapTests(unittest.TestCase):
             os.environ["PATH"] = str(tmp)  # no uv anywhere
             try:
                 mod.find_base_python = lambda candidates=None: None
+                mod.private_uv = lambda: None  # download unavailable too
                 with self.assertRaises(RuntimeError) as cm:
                     mod.ensure_venv(str(tmp / "venv"))
             finally:
                 os.environ["PATH"] = old
             msg = str(cm.exception)
             self.assertIn("3.10", msg)
-            self.assertIn("brew install", msg)
+            self.assertIn("no admin", msg)  # the route offered must not need admin or brew
+
+    def test_fetch_uv_installs_verified_binary(self):
+        mod = load_bootstrap()
+        with tempfile.TemporaryDirectory() as d:
+            tmp = Path(d)
+            tar, sha = make_uv_tarball(tmp)
+            dest = tmp / "tools"
+            path = mod.fetch_uv(str(dest), tar.as_uri(), sha)
+            self.assertEqual(path, str(dest / "uv"))
+            self.assertTrue(os.access(path, os.X_OK))
+            r = subprocess.run([path], capture_output=True, text=True)
+            self.assertEqual(r.stdout.strip(), "fake-uv")
+
+    def test_fetch_uv_rejects_checksum_mismatch(self):
+        mod = load_bootstrap()
+        with tempfile.TemporaryDirectory() as d:
+            tmp = Path(d)
+            tar, _ = make_uv_tarball(tmp)
+            dest = tmp / "tools"
+            with self.assertRaises(RuntimeError) as cm:
+                mod.fetch_uv(str(dest), tar.as_uri(), "0" * 64)
+            self.assertIn("sha256", str(cm.exception))
+            self.assertFalse((dest / "uv").exists(), "a mismatched download must install nothing")
+
+    def test_create_venv_uses_private_uv_when_nothing_else(self):
+        # stock Mac: no Python >= 3.10, no uv on PATH, no brew -> the private pinned uv
+        # builds the venv and fetches a managed Python itself
+        mod = load_bootstrap()
+        with tempfile.TemporaryDirectory() as d:
+            tmp = Path(d)
+            venv = tmp / "venv"
+            log = tmp / "uv.log"
+            uv = tmp / "private-uv"
+            uv.write_text(f'#!/bin/sh\necho "$@" >> "{log}"\n'
+                          f'case "$1" in venv) /bin/mkdir -p "{venv}/bin"; : > "{venv}/bin/python";'
+                          f' printf "version_info = 3.13.1\\n" > "{venv}/pyvenv.cfg";; esac\n')
+            uv.chmod(0o755)
+            old = os.environ["PATH"]
+            os.environ["PATH"] = str(tmp / "empty")
+            try:
+                mod.find_base_python = lambda candidates=None: None
+                mod.private_uv = lambda: str(uv)
+                mod.ensure_venv(str(venv))
+            finally:
+                os.environ["PATH"] = old
+            calls = log.read_text().splitlines()
+            self.assertTrue(calls[0].startswith("venv --clear --python >=3.10"), calls)
+            self.assertIn("pip install", calls[1])
+            self.assertTrue(mod.venv_ok(venv))
+
+    def test_no_download_env_names_the_fix(self):
+        mod = load_bootstrap()
+        with tempfile.TemporaryDirectory() as d:
+            tmp = Path(d)
+            old = os.environ["PATH"]
+            os.environ["PATH"] = str(tmp)
+            os.environ["GET_HAIGGOH_NO_UV_DOWNLOAD"] = "1"
+            try:
+                mod.find_base_python = lambda candidates=None: None
+                with self.assertRaises(RuntimeError) as cm:
+                    mod.ensure_venv(str(tmp / "venv"))
+            finally:
+                os.environ["PATH"] = old
+                del os.environ["GET_HAIGGOH_NO_UV_DOWNLOAD"]
+            msg = str(cm.exception)
+            self.assertIn("3.10", msg)
+            self.assertIn("GET_HAIGGOH_NO_UV_DOWNLOAD", msg)
 
     def test_refuses_to_clear_a_non_venv_directory(self):
         mod = load_bootstrap()
