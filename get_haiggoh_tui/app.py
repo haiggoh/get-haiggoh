@@ -14,6 +14,7 @@ from pathlib import Path
 
 from textual import work
 from textual.app import App
+from textual.binding import Binding
 from textual.geometry import Region
 
 from . import screens as scr
@@ -129,6 +130,7 @@ class GetHaiggohApp(App):
         self._relaunch_rest = None
         self._carried_results = None
         self._run_op = "update"
+        self._last_esc: float | None = None
         self.rows: list[Row] = []
         self.ticks: set[str] = set()
         self.summary = ""
@@ -307,6 +309,41 @@ class GetHaiggohApp(App):
     @property
     def run_active(self) -> bool:
         return self.run_state is not None
+
+    BINDINGS = [Binding("ctrl+q", "quit", "quit", show=False)]
+
+    def action_quit(self):
+        if self.run_active:
+            self.notify("Run in progress — esc to cancel")  # same notice as q (B5)
+            return
+        super().action_quit()
+
+    def on_run_escape(self, now: float | None = None) -> None:
+        """Esc during a run: first press opens the confirm dialog; a second press
+        within 0.5 s means immediate cancel (and pops any cancel dialog). A single
+        later Esc while a dialog is showing just dismisses it."""
+        now = time.monotonic() if now is None else now
+        last = self._last_esc
+        self._last_esc = now
+        cancel_types = (scr.CancelConfirmScreen, scr.CancelModeScreen)
+        if last is not None and now - last <= 0.5:
+            self.cancel_run("immediate")
+            while isinstance(self.screen, cancel_types):
+                self.pop_screen()
+            return
+        if isinstance(self.screen, cancel_types):
+            self.pop_screen()  # dismiss the dialog, no cancel
+            return
+        if self.run_active:
+            self.push_screen(scr.CancelConfirmScreen())
+
+    def cancel_run(self, mode: str) -> None:
+        control = self._run_control
+        if control is not None:
+            control.request_stop(mode)
+        if self.run_state is not None:
+            self.run_state.stop = mode
+        self.notify("Cancelling…" if mode == "immediate" else "Stopping after the current item…")
 
     def _start_run(self, op, steps):
         try:

@@ -285,7 +285,8 @@ class MainScreen(Screen):
 
     def action_back(self):
         if self.app.run_active:
-            return  # Task 7 wires escape to the cancel dialogs
+            self.app.on_run_escape()  # Esc during a run opens the cancel flow
+            return
         if self.app.mode:
             self.app.leave_mode()
 
@@ -544,6 +545,78 @@ class BrewNoticeScreen(ModalScreen):
     @on(Button.Pressed, "#btn-continue")
     def _c(self):
         self.action_decline()
+
+
+class CancelConfirmScreen(ModalScreen):
+    """"Cancel the run? y/n" — Yes leads to the mode dialog, No dismisses and the run
+    continues. escape routes through app.on_run_escape() so a quick second Esc is the
+    immediate-cancel shortcut; a single later Esc just dismisses this dialog."""
+
+    BINDINGS = [Binding("y", "yes", show=False),
+                Binding("n", "no", show=False),
+                Binding("escape", "esc", show=False)]
+
+    def compose(self):
+        yield Static("Cancel the run? y/n", id="cancel-q")
+        with Horizontal(id="buttons"):
+            yield Button("Yes", id="btn-yes")
+            yield Button("No", id="btn-no")
+
+    def action_yes(self):
+        self.dismiss()
+        self.app.push_screen(CancelModeScreen())
+
+    def action_no(self):
+        self.dismiss()
+
+    def action_esc(self):
+        self.app.on_run_escape()
+
+    @on(Button.Pressed, "#btn-yes")
+    def _y(self):
+        self.action_yes()
+
+    @on(Button.Pressed, "#btn-no")
+    def _n(self):
+        self.action_no()
+
+
+class CancelModeScreen(ModalScreen):
+    """How to stop: finish the current item, then stop — or cancel immediately (B7
+    names the risk of the immediate path). escape dismisses with no cancel."""
+
+    WARNING = ("Stopping immediately kills the running command — it can leave a plugin "
+               "half-updated or a Homebrew lock behind.")
+
+    BINDINGS = [Binding("f", "finish", show=False),
+                Binding("c", "immediate", show=False),
+                Binding("escape", "esc", show=False)]
+
+    def compose(self):
+        yield Static("How should the run stop?", id="cancel-mode-q")
+        yield Static(self.WARNING, id="cancel-warning")
+        with Horizontal(id="buttons"):
+            yield Button("Finish current item, then stop", id="btn-finish")
+            yield Button("Cancel and stop immediately", id="btn-immediate")
+
+    def action_finish(self):
+        self.app.cancel_run("after_current")
+        self.dismiss()
+
+    def action_immediate(self):
+        self.app.cancel_run("immediate")
+        self.dismiss()
+
+    def action_esc(self):
+        self.dismiss()
+
+    @on(Button.Pressed, "#btn-finish")
+    def _f(self):
+        self.action_finish()
+
+    @on(Button.Pressed, "#btn-immediate")
+    def _c(self):
+        self.action_immediate()
 
 
 class RunReportScreen(ModalScreen):
