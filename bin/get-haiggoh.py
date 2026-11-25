@@ -330,6 +330,35 @@ def cmd_shims(mode, only=None, policy="skip"):
         print(f"shims: FAILED: {exc}", file=sys.stderr)
         return 1
     print(s.format_report(actions, s.shim_dir(), applied=(mode == "apply")))
+    if mode == "apply" and any(s.is_our_shim(act["path"]) for act in actions):
+        import get_haiggoh_pathrc as pathrc
+        note = pathrc.ensure_on_path(s.shim_dir())
+        if note:
+            print(note)
+    return 0
+
+
+def cmd_shims_path(undo=False):
+    """Show, or with undo remove, the PATH block get-haiggoh adds to the login shell's
+    startup file (see get_haiggoh_pathrc). Without --undo it writes nothing."""
+    import get_haiggoh_pathrc as pathrc
+    import get_haiggoh_shims as s
+    home = os.path.expanduser("~")
+    shell = os.environ.get("SHELL") or ""
+    rc = pathrc.rc_file(shell, home, os.environ.get("ZDOTDIR"))
+    shown = ("~" + rc[len(home):]) if rc and rc.startswith(home + os.sep) else rc
+    if undo:
+        if rc and pathrc.remove_block(rc):
+            print(f"removed the get-haiggoh PATH block from {shown} (open a new terminal; "
+                  f"set GET_HAIGGOH_NO_PATH_EDIT=1 or it is added again at the next session)")
+        else:
+            print(f"no get-haiggoh PATH block in {shown or 'any startup file'} — nothing to remove")
+        return 0
+    directory = s.shim_dir()
+    print(f"shortcut dir:   {directory}")
+    print(f"on this PATH:   {'yes' if s.on_path(directory) else 'no'}")
+    print(f"startup file:   {shown or '(shell not supported: ' + (shell or 'unknown') + ')'}")
+    print(f"get-haiggoh block: {'added' if rc and pathrc.has_block(rc) else 'not added'}")
     return 0
 
 
@@ -393,6 +422,10 @@ def print_help():
     print("      Install/update plugins, then create their PATH shortcuts")
     print("  get-haiggoh shims [plan|apply] [--only n1,n2] [--on-collision POLICY]")
     print("      Only the PATH shortcuts. Bare `shims` is a dry run (same as `shims plan`)")
+    print("  get-haiggoh shims path [--undo]")
+    print("      Show whether the shortcut dir is on PATH. When it is not, apply and the")
+    print("      SessionStart hook add one labelled block to your login shell's startup file")
+    print("      (~/.zprofile, or the first existing bash profile); --undo removes it")
     print()
     print("Options:")
     print("  --only name1,name2     Limit to specific plugin names (comma-separated)")
@@ -406,6 +439,11 @@ def print_help():
     print("Environment:")
     print("  GET_HAIGGOH_NO_SHIMS=1         never create shortcuts (apply and the SessionStart hook)")
     print("  GET_HAIGGOH_SHIM_DIR           where shortcuts go (default ~/.local/bin)")
+    print("  GET_HAIGGOH_NO_PATH_EDIT=1     never edit shell startup files (PATH block)")
+    print("  GET_HAIGGOH_TOOLS_DIR          the TUI's private uv (default")
+    print("                                 ~/.local/share/get-haiggoh/tools)")
+    print("  GET_HAIGGOH_NO_UV_DOWNLOAD=1   never download that uv (the TUI then needs a")
+    print("                                 local Python >= 3.10 or uv)")
     print("  GET_HAIGGOH_SHIM_BACKUP_DIR    where overwritten links/files are recorded")
     print("                                 (default ~/.local/state/get-haiggoh/shim-backups)")
     print("  GET_HAIGGOH_INSTALLED_PLUGINS_FILE, GET_HAIGGOH_CACHE_DIR")
@@ -442,6 +480,13 @@ def main(argv):
     if cmd == "dryrun":
         cmd = "plan"
     mode = "plan"
+    if cmd == "shims" and rest and rest[0] == "path":
+        extra = [a for a in rest[1:] if a != "--undo"]
+        if extra:
+            print(f"usage: get-haiggoh.py shims path [--undo] (unrecognized: {' '.join(extra)})",
+                  file=sys.stderr)
+            return 2
+        return cmd_shims_path(undo="--undo" in rest[1:])
     if cmd == "shims" and rest and rest[0] in ("plan", "apply"):
         mode, rest = rest[0], rest[1:]
     only, category, leftover = _parse_selection_args(rest)
