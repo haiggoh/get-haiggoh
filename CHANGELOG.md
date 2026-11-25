@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.11.1] — 2026-11-25
+
+### Fixed
+
+- The completion report after a bulk run is now a small overlay box on top of the live
+  menu instead of a full-screen modal, so the menu no longer looks like it disappeared
+  mid-install (dogfood feedback 2026-11-25).
+- Two-step items (plugin + brew, e.g. free-agents) are judged against the run-start row,
+  so a fully successful update no longer reports the brew step as failed in the report.
+
 ## [0.11.0] — 2026-11-25
 
 ### Changed — the TUI no longer freezes during bulk runs
