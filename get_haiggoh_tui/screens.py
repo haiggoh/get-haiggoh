@@ -12,7 +12,7 @@ import time
 
 from textual import on
 from textual.binding import Binding
-from textual.containers import Horizontal
+from textual.containers import Horizontal, Vertical
 from textual.message import Message
 from textual.screen import ModalScreen, Screen
 from textual.widgets import Button, Input, OptionList, Static
@@ -636,11 +636,14 @@ class RunReportScreen(ModalScreen):
     def compose(self):
         k = sum(1 for r in self.results if r.ok)
         m = len(self.results) - k  # failed = every non-ok, skipped included
-        yield Static(f"{EMOJI[self.op]} {self.op.capitalize()} report — {k} ok · {m} failed",
-                     id="report-title")
-        yield Static(Text(self._body()), id="report-text")  # Text, never a markup string (0.10.2 bug)
-        with Horizontal(id="buttons"):
-            yield Button("Done", id="btn-done")
+        # a small centered BOX, not a full screen: the screen stays transparent so the
+        # live menu remains visible behind the report (dogfood feedback 2026-11-25)
+        with Vertical(id="report-box"):
+            yield Static(f"{EMOJI[self.op]} {self.op.capitalize()} report — {k} ok · {m} failed",
+                         id="report-title")
+            yield Static(Text(self._body()), id="report-text")  # Text, never a markup string (0.10.2 bug)
+            with Horizontal(id="buttons"):
+                yield Button("Done", id="btn-done")
 
     def _body(self):
         lines = [self.error] if self.error else []

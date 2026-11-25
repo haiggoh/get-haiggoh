@@ -229,6 +229,40 @@ class LiveRunTests(unittest.TestCase):
 
             asyncio.run(asyncio.wait_for(go(), 10))
 
+    def test_report_is_a_small_overlay_with_menu_visible_behind(self):
+        # dogfood feedback 2026-11-25: the full-screen report looked like the menu
+        # disappeared / the install was interrupted. The report must be a small
+        # centered box with the live menu still rendered behind it.
+        with tempfile.TemporaryDirectory() as d:
+            runner = GatedRunner()
+            app = make_app(d, runner=runner)
+            shot = Path(d) / "report.svg"
+
+            async def go():
+                async with app.run_test(size=(100, 40)) as pilot:
+                    await self._start_update(app, pilot)
+                    await _wait_started(runner)
+                    runner.release.set()
+                    await _wait_done(app)
+                    rep = app.screen
+                    assert isinstance(rep, scr.RunReportScreen), type(rep).__name__
+                    box = rep.query_one("#report-box")  # raises if there is no box
+                    await pilot.pause(0.3)  # let layout settle
+                    assert box.region.width < rep.size.width, \
+                        f"report box must be narrower than the screen: {box.region}"
+                    assert box.region.height < rep.size.height, \
+                        f"report box must be shorter than the screen: {box.region}"
+                    app.save_screenshot(str(shot))
+                    # Rich's SVG export encodes spaces as &#160; — decode before matching
+                    svg = shot.read_text(encoding="utf-8").replace("&#160;", " ")
+                    assert "Update report" in svg, "report not rendered"
+                    assert "Q) Quit" in svg, "the menu must still be rendered BEHIND the report"
+                    await pilot.press("escape")  # dismiss still works
+                    await pilot.pause()
+                    assert isinstance(app.screen, scr.MainScreen)
+
+            asyncio.run(asyncio.wait_for(go(), 10))
+
     def test_q_does_not_quit_during_run(self):
         with tempfile.TemporaryDirectory() as d:
             runner = GatedRunner()

@@ -28,7 +28,11 @@ OptionList > .option-list--option-nonlink { background: ansi_default; color: ans
 OptionList > .option-list--option-disabled { background: ansi_default; color: ansi_bright_black; }
 Input { background: ansi_default; color: ansi_default; border: round ansi_bright_black; } /* as CSL */
 Static { background: ansi_default; color: ansi_default; }
-/* live-run closing report (RunReportScreen); the dim runstatus option reuses the
-   existing disabled-option grey (ansi_bright_black), the same grey as #summary */
-#report-title { text-style: bold; padding: 0 1; }
-#report-text { padding: 0 1; max-height: 20; }
+/* live-run closing report (RunReportScreen): a small overlay BOX on a transparent
+   screen, so the live menu stays visible behind it (dogfood feedback 2026-11-25);
+   the dim runstatus option reuses the existing disabled-option grey (ansi_bright_black) */
+RunReportScreen { background: transparent; align: center middle; }
+#report-box { width: auto; max-width: 72; height: auto; max-height: 16; border: round ansi_bright_black;
+              background: ansi_default; padding: 0 1; }
+#report-title { text-style: bold; }
+#report-text { padding: 0 1; max-height: 10; }
