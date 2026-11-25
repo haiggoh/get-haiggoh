@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.11.0] — 2026-11-25
+
+### Changed — the TUI no longer freezes during bulk runs
+
+- Update / Install / Uninstall (also when get-haiggoh updates itself) now run on a worker
+  thread: the list stays painted and fully interactive — hover, arrows and the info box keep
+  working while a run is in progress. There is no modal lockout anymore.
+- Runs are much faster: after each step only that item's installed state is re-checked
+  locally (20 rows in 0.08 s) instead of re-checking every plugin online per step
+  (measured 8.5–11.1 s per sweep, twice per step before).
+- The currently running item's row shows a spinner and a per-item progress bar right after
+  its name; a dim, self-refreshing status line sits one blank row under `Q) Quit` and shows
+  the live output (or a heartbeat when the command is silent).
+- Each row flips to `✓ <new version>` / `✗ <reason>` the moment its step finishes; a closing
+  report modal lists every item with ✓/✗ and the first error line, and the list refreshes
+  in the background afterwards.
+- Esc cancels a run: a confirm dialog, then "finish current item, then stop" or "cancel and
+  stop immediately" (with a warning about half-updated plugins / Homebrew locks); two Esc
+  presses within 0.5 s stop immediately. `q` / ctrl+q no longer quit mid-run.
+- `GET_HAIGGOH_STEP_TIMEOUT` sets seconds WITHOUT OUTPUT before a hung step is stopped and
+  marked `✗ timed out` (default 600, `<= 0` disables); an invalid value refuses to run and
+  says so.
+- The ship gate now also runs the TUI pilot tests (under the TUI venv) and fails on any skip.
+
 ## [0.10.6] — 2026-11-17
 
 - In native Codex sessions, check manual hook paths instead of changing Claude marketplace or shortcut state. Missing duplicates are removed only when native metadata verifies a trusted maintained equivalent; preserve an exact backup and reject concurrent edits.
