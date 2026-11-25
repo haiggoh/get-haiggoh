@@ -80,6 +80,8 @@ def _fake_venv(d):
     py.chmod(py.stat().st_mode | stat.S_IXUSR)
     sha = hashlib.sha256((ROOT / "tui-requirements.txt").read_bytes()).hexdigest()
     (venv / ".req-sha").write_text(sha + "\n")
+    # every real venv has one; the launcher rejects a venv without a Python >= 3.10 in it
+    (venv / "pyvenv.cfg").write_text("version_info = 3.13.1\n")
     return venv
 
 
