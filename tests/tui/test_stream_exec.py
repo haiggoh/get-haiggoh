@@ -57,10 +57,10 @@ class StreamExecTests(unittest.TestCase):
                 "p=subprocess.Popen([sys.executable,'-c','import time;time.sleep(30)']);"
                 "print(p.pid,flush=True);time.sleep(30)")
         t0 = time.monotonic()
-        res = rn.stream_execute(_child(code), on_line=on_line, timeout=0.5, kill_grace=0.2)
+        res = rn.stream_execute(_child(code), on_line=on_line, timeout=1.5, kill_grace=0.3)
         elapsed = time.monotonic() - t0
         self.assertTrue(res.timed_out)
-        self.assertLess(elapsed, 2.0, "must return promptly after the idle timeout")
+        self.assertLess(elapsed, 3.0, "must return promptly after the idle timeout")
         self.assertTrue(gpids, "the child prints the grandchild pid")
         deadline = time.monotonic() + 1.0
         while True:
@@ -75,7 +75,7 @@ class StreamExecTests(unittest.TestCase):
     def test_idle_timeout_spares_a_chatty_command(self):
         lines = []
         code = "import time\nfor i in range(8):\n    print('l%d' % i, flush=True)\n    time.sleep(0.2)"
-        res = rn.stream_execute(_child(code), on_line=lines.append, timeout=0.5)
+        res = rn.stream_execute(_child(code), on_line=lines.append, timeout=1.0)
         self.assertFalse(res.timed_out, "the timeout is idle-based, not a total limit")
         self.assertEqual(res.returncode, 0)
         self.assertEqual(len(lines), 8)
@@ -93,7 +93,12 @@ class StreamExecTests(unittest.TestCase):
                 "print(p.pid,flush=True);time.sleep(30)")
 
         def stopper():
-            time.sleep(0.3)
+            # wait until the grandchild exists (its pid was printed), then stop —
+            # fixed sleeps race python startup under load
+            t0 = time.monotonic()
+            while not gpids and time.monotonic() - t0 < 5:
+                time.sleep(0.02)
+            time.sleep(0.2)
             control.request_stop("immediate")
 
         th = threading.Thread(target=stopper)
@@ -103,8 +108,9 @@ class StreamExecTests(unittest.TestCase):
         elapsed = time.monotonic() - t0
         th.join()
         self.assertTrue(res.cancelled)
-        self.assertLess(elapsed, 1.5)
+        self.assertLess(elapsed, 3.0, "the kill must be prompt (no-kill would take 30 s)")
         self.assertIsNone(control._proc, "detach() ran in the finally")
+        self.assertTrue(gpids, "the child printed the grandchild pid")
         deadline = time.monotonic() + 1.0
         while True:
             try:
@@ -119,15 +125,22 @@ class StreamExecTests(unittest.TestCase):
         # the stop lands while the child is alive, but the child IGNORES SIGTERM
         # and exits 0 on its own — only death BY A SIGNAL may mark cancelled
         control = rn.RunControl()
+        seen = []
 
         def stopper():
-            time.sleep(0.3)
+            # wait for the child's ready line (SIG_IGN installed) before stopping —
+            # a fixed sleep would race python startup under load
+            t0 = time.monotonic()
+            while "ready" not in seen and time.monotonic() - t0 < 5:
+                time.sleep(0.02)
+            time.sleep(0.2)
             control.request_stop("immediate")
 
         th = threading.Thread(target=stopper)
         th.start()
-        code = "import signal,time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(0.5)"
-        res = rn.stream_execute(_child(code), on_line=lambda line: None, control=control)
+        code = ("import signal,time; signal.signal(signal.SIGTERM, signal.SIG_IGN); "
+                "print('ready', flush=True); time.sleep(1.0)")
+        res = rn.stream_execute(_child(code), on_line=seen.append, control=control)
         th.join()
         self.assertEqual(res.returncode, 0)
         self.assertFalse(res.cancelled, "only death BY A SIGNAL marks cancelled")
@@ -146,7 +159,7 @@ class StreamExecTests(unittest.TestCase):
                 "print('ready', flush=True); time.sleep(5)")
         t0 = time.monotonic()
         res = rn.stream_execute(_child(code), on_line=lambda line: None,
-                                timeout=0.5, kill_grace=0.2)
+                                timeout=1.2, kill_grace=0.3)
         elapsed = time.monotonic() - t0
         self.assertTrue(res.timed_out)
         self.assertLess(elapsed, 3.0, "SIGTERM ignored ⇒ SIGKILL after kill_grace")
