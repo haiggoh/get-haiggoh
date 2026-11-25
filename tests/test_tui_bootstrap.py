@@ -112,7 +112,9 @@ class BootstrapTests(unittest.TestCase):
                 f.write_text("#!/bin/sh\nexit 1\n")
                 f.chmod(0o755)
             menu = tmp / "fake-menu"
-            menu.write_text("print('PLAIN-REACHED')\n")
+            menu.write_text("import os\n"
+                            "print('PLAIN-REACHED')\n"
+                            "print('REASON=' + os.environ.get('GET_HAIGGOH_TUI_FALLBACK_REASON', ''))\n")
             env = base_env(tmp,
                            PATH=str(fakebin) + ":/usr/bin:/bin",
                            GET_HAIGGOH_TUI_VENV=str(tmp / "venv"),
@@ -121,6 +123,13 @@ class BootstrapTests(unittest.TestCase):
             self.assertIn("TUI unavailable", r.stderr)
             self.assertIn("PLAIN-REACHED", r.stdout)
             self.assertEqual(r.returncode, 0)
+            # colleague feedback 2026-11-25: the reason must ALSO reach the menu via the
+            # env var, so the menu can show it under its banner (the stderr line scrolls away)
+            reason = next(ln for ln in r.stdout.splitlines()
+                          if ln.startswith("REASON="))[len("REASON="):]
+            self.assertTrue(reason, "the fallback reason must reach the plain menu "
+                                    "via GET_HAIGGOH_TUI_FALLBACK_REASON")
+            self.assertIn(reason, r.stderr)  # same reason as the one-line stderr notice
 
     def test_req_change_rebuilds(self):
         # unit-level: venv_ok is False when the stamp differs, True when it matches;

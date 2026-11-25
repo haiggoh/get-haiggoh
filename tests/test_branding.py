@@ -53,5 +53,34 @@ class CliBrandingTests(unittest.TestCase):
         self.assertTrue(lines[2] and set(lines[2]) == {"="}, lines[2])
 
 
+class FallbackNoticeTests(unittest.TestCase):
+    """Colleague feedback 2026-11-25: when get-haiggoh-tui falls back to the plain menu,
+    the menu must say WHY under its banner (the one-line stderr notice scrolls away)."""
+
+    MENU = ROOT / "bin" / "get-haiggoh-menu"
+
+    def run_menu(self, extra_env):
+        import os
+        env = os.environ.copy()
+        env.pop("GET_HAIGGOH_TUI_FALLBACK_REASON", None)
+        env.update(extra_env)
+        return subprocess.run([sys.executable, str(self.MENU)], input="5\n",
+                              capture_output=True, text=True, timeout=15, env=env)
+
+    def test_menu_prints_fallback_reason_right_under_the_banner(self):
+        r = self.run_menu({"GET_HAIGGOH_TUI_FALLBACK_REASON": "no Python >= 3.10 found"})
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("⚠️ TUI unavailable: no Python >= 3.10 found", r.stdout)
+        self.assertIn("details: get-haiggoh-tui --check", r.stdout)
+        # right under the banner: the notice comes before the "Choose an action:" prompt
+        self.assertLess(r.stdout.index("⚠️ TUI unavailable"),
+                        r.stdout.index("Choose an action:"))
+
+    def test_menu_omits_the_notice_when_no_reason_is_set(self):
+        r = self.run_menu({})
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertNotIn("TUI unavailable", r.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()

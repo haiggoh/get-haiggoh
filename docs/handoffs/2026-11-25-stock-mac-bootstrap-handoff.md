@@ -97,3 +97,15 @@ colleagues get it via `get-haiggoh` / `/get-haiggoh` (update) — no manual venv
 
 ## 6. Progress log (append one line per milestone)
 - 2026-11-25 paid session: Tasks 1-4 done, gate green, pushed `0e64d7b`; handed off for A-D.
+- 2026-11-25 free session (Mistral Large 4 "Le Chonk", proxy-4150): Next action A done —
+  a bootstrap failure now passes its reason to the plain menu via
+  `GET_HAIGGOH_TUI_FALLBACK_REASON` (`plain_menu(reason=…)` in `bin/get-haiggoh-tui`) and
+  `bin/get-haiggoh-menu` prints `⚠️ TUI unavailable: <reason>` + `details:
+  get-haiggoh-tui --check` right under its banner; the stderr line is kept. Tests written
+  first and watched RED, then green (test_tui_bootstrap fallback test extended with a
+  stub menu printing the env var; new FallbackNoticeTests in test_branding.py cover
+  notice-present and notice-absent); both scripts parse on /usr/bin/python3 3.9.6 and
+  document the var in --help (verified by running it); live menu run shows the notice;
+  CHANGELOG 0.12.0 bullet added; `build-portable.py` regen committed, `--check` clean.
+  Next: B (whole-branch review dispatch + full gate), C (rtc-ship v0.12.0), D (dogfood the
+  installed copy).

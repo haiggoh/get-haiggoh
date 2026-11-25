@@ -16,6 +16,11 @@
   stock macOS does not put on PATH. The SessionStart hook and `apply` now add one labelled
   block to your login shell's startup file (`~/.zprofile`, or the first existing bash
   profile) when that directory is missing, after backing the file up, and say so.
+- **The plain menu now says why the TUI is unavailable.** When the bootstrap falls back,
+  the reason is passed to the menu (`GET_HAIGGOH_TUI_FALLBACK_REASON`) and shown right under
+  the menu banner as `⚠️ TUI unavailable: …` plus `details: get-haiggoh-tui --check`, instead
+  of only the single stderr line, which the banner scrolls away (colleague feedback
+  2026-11-25).
 
 ### Added
 

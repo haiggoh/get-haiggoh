@@ -14,6 +14,9 @@ Env:
   GET_HAIGGOH_TUI_STATE_FILE    TUI state file (default ~/.claude/.get-haiggoh-tui-state.json)
   GET_HAIGGOH_TUI_PENDING_FILE  pending-run file (default ~/.claude/.get-haiggoh-tui-pending.json)
   GET_HAIGGOH_MENU_SCRIPT       plain-menu override (used by tests)
+  GET_HAIGGOH_TUI_FALLBACK_REASON  set here before exec'ing the plain menu on a bootstrap
+                               failure (the reason); get-haiggoh-menu prints it under
+                               its banner
   GET_HAIGGOH_TOOLS_DIR         where the private uv lives
                                (default ~/.local/share/get-haiggoh/tools)
   GET_HAIGGOH_NO_UV_DOWNLOAD=1  never download the private uv
@@ -23,8 +26,9 @@ and recreated when it was built on a Python below 3.10 (the pins need >= 3.10; m
 own python3 is 3.9). It is built on the first Python >= 3.10 found — this interpreter,
 python3.N on PATH, Homebrew's — else on one uv fetches: a uv on PATH, or a pinned,
 checksum-verified uv downloaded into the tools dir. No admin rights, no Homebrew needed.
-Any bootstrap failure prints ONE stderr line and execs the plain menu — setup never
-dead-ends.
+Any bootstrap failure prints ONE stderr line, passes the reason to the menu via
+GET_HAIGGOH_TUI_FALLBACK_REASON (so the menu can show it under its banner), and execs
+the plain menu — setup never dead-ends.
 """
 import hashlib
 import os
@@ -322,8 +326,15 @@ def hide_frame():
         _frame_shown = False
 
 
-def plain_menu():
+def plain_menu(reason=None):
+    """Exec the plain menu. A bootstrap `reason` is exported as
+    GET_HAIGGOH_TUI_FALLBACK_REASON so the menu can show why the TUI is unavailable;
+    a bare --plain clears any stale value instead."""
     hide_frame()
+    if reason is None:
+        os.environ.pop("GET_HAIGGOH_TUI_FALLBACK_REASON", None)
+    else:
+        os.environ["GET_HAIGGOH_TUI_FALLBACK_REASON"] = reason
     menu = os.environ.get("GET_HAIGGOH_MENU_SCRIPT") or os.path.join(HERE, "get-haiggoh-menu")
     os.execv(sys.executable, [sys.executable, menu])
 
@@ -363,7 +374,7 @@ def main(argv):
     except Exception as exc:
         hide_frame()
         sys.stderr.write(f"get-haiggoh: TUI unavailable ({exc}) — opening the plain menu\n")
-        plain_menu()
+        plain_menu(reason=str(exc))
         return 0
     env = os.environ.copy()
     env["PYTHONPATH"] = ROOT + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
