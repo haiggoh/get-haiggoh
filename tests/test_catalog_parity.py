@@ -52,7 +52,8 @@ class CatalogParityTests(unittest.TestCase):
                     encoding="utf-8")
             r = run("--repos-root", d)
         self.assertEqual(r.returncode, 0, r.stdout)
-        self.assertIn("all 16 catalog entries match", r.stdout)
+        # derived from the catalog, never pinned: a pinned 16 broke the moment a plugin was added
+        self.assertIn(f"all {len(CATALOG['plugins'])} catalog entries match", r.stdout)
 
     def test_mismatch_is_listed_and_fails(self):
         with tempfile.TemporaryDirectory() as d:
