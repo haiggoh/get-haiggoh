@@ -116,6 +116,13 @@
       "description": "🛘🥾 A PreToolUse hook that checks each command before it runs. Silent-corruption traps — backticks in double quotes, commits with conflict markers, discarded uncommitted work, unrecoverable branch deletions — are blocked with the exact fix; risky habits like git add -A only warn. A git-level guard also refuses unrecoverable branch deletions by any route. Override a rule once: # wys:allow <rule>.",
       "category": "productivity",
       "tags": ["hook", "pretooluse", "shell", "zsh", "safety", "lint"]
+    },
+    {
+      "name": "clickable-links",
+      "source": { "source": "url", "url": "https://github.com/haiggoh/clickable-links.git" },
+      "description": "🖱️ Makes the links in Claude's replies and tool output clickable: web URLs open in your browser, file and folder paths in Finder, GitHub/GitLab #123 refs and commit SHAs on their pages. A plain click works even in Apple Terminal, never launches anything, and /clickable-links walks you through the settings.",
+      "category": "productivity",
+      "tags": ["mod", "links", "finder", "github", "gitlab", "terminal"]
     }
   ]
 }

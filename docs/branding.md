@@ -31,7 +31,7 @@ measure-twice ⚖️ · no-hidden-changes 👁️ · brief-agents 📝 · resume
 get-haiggoh 👨🏻‍💻 · lasting-plans 📜 · mcp-smoke-test 🔌 ·
 Claude-Code-Transcript-Distiller ⚗️ · codex-cost-tracker 💸 · echoprism 📐 ·
 homebrew-tap 🚰 · mac-iphone-backup-cloudsync 📱 · mac-claude-migration 📦 ·
-claude-code-desktop-sync 🖇️ · human-shell 🤝 (no About emoji exists — handshake per user 2026-11-09, recorded here)
+claude-code-desktop-sync 🖇️ · clickable-links 🖱️ · human-shell 🤝 (no About emoji exists — handshake per user 2026-11-09, recorded here)
 
 ## Never brand
 

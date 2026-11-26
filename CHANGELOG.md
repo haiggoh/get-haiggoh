@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.1] — 2026-11-26
+
+### Added
+
+- **clickable-links** 🖱️ joins the catalog: clickable URLs, file and folder paths (Finder),
+  GitHub/GitLab `#123` refs and commit SHAs in Claude's replies and tool output.
+
 ## [0.12.0] — 2026-11-25
 
 ### Fixed — get-haiggoh works on a stock Mac (no Homebrew, no admin rights)
