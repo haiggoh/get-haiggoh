@@ -100,7 +100,7 @@
     }
   ],
   "files": {
-    ".claude-plugin/plugin.json": "1b96c5bf64f2fbbec33b6e0436b92da78306fd8adcfac76a0d4eb7ce39613eea",
+    ".claude-plugin/plugin.json": "8d3fd52d49e9c82d4df7f2ff6604281287f2e37c1dbb7a6a91148b409a416155",
     "get_haiggoh_core.py": "909cc393ade35008e2d943f25530c36ea41e70004cca2d097d3319facca5c2c5",
     "get_haiggoh_hook_health.py": "5df284d97e262dc38fcd555f448f2ca49ee4abb44b3d13677c6f51e21d13d3bb",
     "get_haiggoh_pathrc.py": "a61eb48347dfa1f5bf5d906dcc84e8e534ad461a32fab941a5f839e0b9c8bff5",
@@ -116,7 +116,7 @@
     "skills/get-haiggoh/SKILL.md": "0216b21aa93632f3b6d718f4a7a37b16ec2a362d4172efd2f86d97cbf1abcc51"
   },
   "schema": "haiggoh-portable-build/1",
-  "source_commit": "ad566150c7fad97b51f139b60bd66ede41752770",
+  "source_commit": "3a17133c274a17dba9f831e7534ee0c707e41e97",
   "source_repo": "haiggoh/get-haiggoh",
   "transform_version": "1"
 }
