@@ -43,7 +43,8 @@ That's all you need. Everything below is optional.
 | `q` | quit |
 
 Besides the plugins, the menu also lists related haiggoh tools (transcript-distiller,
-human-shell, mac-claude-migration, mac-iphone-backup-cloudsync).
+human-shell, mac-claude-migration, mac-iphone-backup-cloudsync, motion-pipeline — brew formula
+`haiggoh/tap/motion-pipeline`, runnable from the menu via `motion-pipeline`).
 
 You can also just ask Claude: *"update all my haiggoh plugins"* shows you what would change and
 asks before it installs anything.

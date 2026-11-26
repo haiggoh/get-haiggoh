@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.12.2] — 2026-11-26 — motion-pipeline in the catalog + interactive menu
+
+- `catalog/related-tools.json` now lists motion-pipeline (repo haiggoh/motion-pipeline, brew
+  formula `haiggoh/tap/motion-pipeline`, `version_cmd: motion-pipeline --version`), so it
+  appears in the get-haiggoh interactive menu as a runnable entry (menu argv `motion-pipeline`
+  opens the project menu) once installed from the tap. Brand mark 🎬 added to
+  docs/branding.md; spec tool order updated.
+
+
 ## [0.12.1] — 2026-11-26
 
 ### Added

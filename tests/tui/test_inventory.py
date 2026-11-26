@@ -13,7 +13,7 @@ sys.path.insert(0, str(ROOT))
 from get_haiggoh_tui.inventory import Row, brand_marks, load_catalog  # noqa: E402
 
 SPEC_TOOL_ORDER = ["claude-code-transcript-distiller", "human-shell",
-                   "mac-claude-migration", "mac-iphone-backup-cloudsync"]
+                   "mac-claude-migration", "mac-iphone-backup-cloudsync", "motion-pipeline"]
 
 
 class BrandMarksTests(unittest.TestCase):
